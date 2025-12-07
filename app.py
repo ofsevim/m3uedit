@@ -67,9 +67,8 @@ def convert_df_to_m3u(df):
 
 # --- ARAYÜZ (UI) ---
 
-# Session State (Verileri hafızada tutmak için)
+# Session State
 if 'data' not in st.session_state:
-    # "Seç" sütunu eklendi (Boolean/Checkbox için)
     st.session_state.data = pd.DataFrame(columns=["Seç", "Grup", "Kanal Adı", "URL"])
 
 # Sol Menü (Sidebar)
@@ -90,14 +89,24 @@ with st.sidebar:
             if url:
                 try:
                     with st.spinner('Link indiriliyor ve taranıyor...'):
-                        response = requests.get(url, timeout=30)
-                        response.raise_for_status()
-                        raw_channels = parse_m3u_content(response.text)
-                        final_channels = filter_channels(raw_channels, only_tr)
-                        new_data = pd.DataFrame(final_channels)
-                        st.success(f"İşlem Tamam! Toplam {len(final_channels)} kanal bulundu.")
+                        # --- DÜZELTME BURADA ---
+                        # Sunucuya kendimizi tarayıcı gibi tanıtıyoruz
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                        }
+                        # verify=False, SSL sertifika hatalarını yok sayar (bazen iptv'lerde sertifika sorunu olur)
+                        response = requests.get(url, headers=headers, timeout=30, verify=False)
+                        
+                        if response.status_code == 200:
+                            raw_channels = parse_m3u_content(response.text)
+                            final_channels = filter_channels(raw_channels, only_tr)
+                            new_data = pd.DataFrame(final_channels)
+                            st.success(f"İşlem Tamam! Toplam {len(final_channels)} kanal bulundu.")
+                        else:
+                            st.error(f"Sunucu hatası: {response.status_code} - {response.reason}")
+                            
                 except Exception as e:
-                    st.error(f"Hata oluştu: {e}")
+                    st.error(f"Bağlantı Hatası: {e}")
             else:
                 st.warning("Lütfen bir link girin.")
 
@@ -109,17 +118,15 @@ with st.sidebar:
             new_data = pd.DataFrame(raw_channels)
             st.success(f"Dosya yüklendi. {len(raw_channels)} kanal.")
 
-    # Eğer yeni veri geldiyse, başına "Seç" sütunu ekleyip state'e atıyoruz
     if new_data is not None:
         if "Seç" not in new_data.columns:
-            new_data.insert(0, "Seç", False) # Varsayılan olarak seçili gelmez
+            new_data.insert(0, "Seç", False)
         st.session_state.data = new_data
 
     st.markdown("---")
     
-    # --- AKILLI İNDİRME BUTONU ---
+    # İndirme Butonu Mantığı
     if not st.session_state.data.empty:
-        # Kaç tane seçili olduğunu kontrol et
         selected_rows = st.session_state.data[st.session_state.data["Seç"] == True]
         count_selected = len(selected_rows)
         
@@ -148,7 +155,6 @@ with st.sidebar:
 st.subheader("Kanal Listesi Düzenleyici")
 
 if not st.session_state.data.empty:
-    # İstatistikler
     col1, col2, col3 = st.columns(3)
     col1.metric("Toplam Kanal", len(st.session_state.data))
     
@@ -158,59 +164,35 @@ if not st.session_state.data.empty:
     unique_groups = st.session_state.data["Grup"].nunique()
     col3.metric("Grup Sayısı", unique_groups)
 
-    # Arama Kutusu
     search_term = st.text_input("🔍 Tablo içinde ara (Grup veya Kanal Adı):", "")
 
-    # Görüntülenecek veriyi hazırla
     df_display = st.session_state.data
     
     if search_term:
-        # Arama yaparken de Seç sütununu korumalıyız
         df_display = df_display[
             df_display["Grup"].str.contains(search_term, case=False) | 
             df_display["Kanal Adı"].str.contains(search_term, case=False)
         ]
 
-    st.caption("İstediğiniz kanalların başındaki kutucuğu işaretleyin. Düzenleme yapmak için hücreye tıklayın.")
+    st.caption("İstediğiniz kanalların başındaki kutucuğu işaretleyin.")
 
-    # EDİTÖR TABLOSU
     edited_df = st.data_editor(
         df_display,
         num_rows="dynamic",
         use_container_width=True,
-        hide_index=True, # Satır numaralarını gizle (daha temiz görünüm)
+        hide_index=True,
         column_config={
-            "Seç": st.column_config.CheckboxColumn(
-                "Seç",
-                help="İndirmek için seçin",
-                default=False,
-                width="small"
-            ),
-            "URL": st.column_config.LinkColumn(
-                "Yayın Linki",
-                width="medium"
-            ),
-            "Grup": st.column_config.TextColumn(
-                "Grup",
-                width="medium"
-            ),
-            "Kanal Adı": st.column_config.TextColumn(
-                "Kanal Adı",
-                width="large"
-            )
+            "Seç": st.column_config.CheckboxColumn("Seç", default=False, width="small"),
+            "URL": st.column_config.LinkColumn("Yayın Linki", width="medium"),
+            "Grup": st.column_config.TextColumn("Grup", width="medium"),
+            "Kanal Adı": st.column_config.TextColumn("Kanal Adı", width="large")
         },
         height=600,
         key="editor"
     )
 
-    # Data editor'den gelen değişiklikleri (Checkbox tıklamaları dahil) ana veriye kaydetme
-    # Bu kısım biraz trick gerektirir çünkü arama yapıldığında indexler karışabilir.
-    # Pandas index'ini kullanarak update ediyoruz.
-    
     if not edited_df.equals(df_display):
-        # Sadece değişen kısımları ana veriye (st.session_state.data) aktar
         st.session_state.data.update(edited_df)
-        # Sayfayı yenileyerek butonun güncellenmesini sağla (Checkbox'a basınca buton yazısı değişsin diye)
         st.rerun()
 
 else:
