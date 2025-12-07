@@ -15,7 +15,7 @@ def parse_m3u_content(content):
     channels = []
     current_info = None
     
-    # Regex deseni (Tkinter kodundaki ile aynı)
+    # Regex deseni
     strict_pattern = re.compile(r'(\b|_|\[|\(|\|)(TR|TURK|TÜRK|TURKIYE|TÜRKİYE|YERLI|ULUSAL|ISTANBUL)(\b|_|\]|\)|\||:)', re.IGNORECASE)
 
     for line in lines:
@@ -26,12 +26,10 @@ def parse_m3u_content(content):
         if line.startswith("#EXTINF"):
             info = {"Grup": "Genel", "Kanal Adı": "Bilinmeyen", "URL": ""}
             
-            # Grup yakalama
             grp = re.search(r'group-title="([^"]*)"', line)
             if grp:
                 info["Grup"] = grp.group(1)
             
-            # İsim yakalama
             parts = line.split(",")
             if len(parts) > 1:
                 info["Kanal Adı"] = parts[-1].strip()
@@ -55,7 +53,6 @@ def filter_channels(channels, only_tr=False):
     strict_pattern = re.compile(r'(\b|_|\[|\(|\|)(TR|TURK|TÜRK|TURKIYE|TÜRKİYE|YERLI|ULUSAL|ISTANBUL)(\b|_|\]|\)|\||:)', re.IGNORECASE)
     
     for ch in channels:
-        # Sadece GRUP adına bakıyoruz (Orijinal kodundaki mantık)
         if strict_pattern.search(ch["Grup"]):
             filtered.append(ch)
             
@@ -72,7 +69,8 @@ def convert_df_to_m3u(df):
 
 # Session State (Verileri hafızada tutmak için)
 if 'data' not in st.session_state:
-    st.session_state.data = pd.DataFrame(columns=["Grup", "Kanal Adı", "URL"])
+    # "Seç" sütunu eklendi (Boolean/Checkbox için)
+    st.session_state.data = pd.DataFrame(columns=["Seç", "Grup", "Kanal Adı", "URL"])
 
 # Sol Menü (Sidebar)
 with st.sidebar:
@@ -80,6 +78,9 @@ with st.sidebar:
     st.markdown("---")
     
     mode = st.radio("Yükleme Yöntemi", ["🌐 Linkten Yükle", "📂 Dosya Yükle"])
+    
+    # Veri Yükleme İşlemleri
+    new_data = None
     
     if mode == "🌐 Linkten Yükle":
         url = st.text_input("M3U Linki Yapıştır:")
@@ -92,11 +93,8 @@ with st.sidebar:
                         response = requests.get(url, timeout=30)
                         response.raise_for_status()
                         raw_channels = parse_m3u_content(response.text)
-                        
-                        # Filtreleme
                         final_channels = filter_channels(raw_channels, only_tr)
-                        
-                        st.session_state.data = pd.DataFrame(final_channels)
+                        new_data = pd.DataFrame(final_channels)
                         st.success(f"İşlem Tamam! Toplam {len(final_channels)} kanal bulundu.")
                 except Exception as e:
                     st.error(f"Hata oluştu: {e}")
@@ -108,19 +106,39 @@ with st.sidebar:
         if uploaded_file is not None:
             stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8"))
             raw_channels = parse_m3u_content(stringio.read())
-            st.session_state.data = pd.DataFrame(raw_channels)
+            new_data = pd.DataFrame(raw_channels)
             st.success(f"Dosya yüklendi. {len(raw_channels)} kanal.")
 
+    # Eğer yeni veri geldiyse, başına "Seç" sütunu ekleyip state'e atıyoruz
+    if new_data is not None:
+        if "Seç" not in new_data.columns:
+            new_data.insert(0, "Seç", False) # Varsayılan olarak seçili gelmez
+        st.session_state.data = new_data
+
     st.markdown("---")
-    st.info("Düzenleme yaptıktan sonra aşağıdan indirebilirsiniz.")
     
-    # İndirme Butonu
+    # --- AKILLI İNDİRME BUTONU ---
     if not st.session_state.data.empty:
-        m3u_output = convert_df_to_m3u(st.session_state.data)
+        # Kaç tane seçili olduğunu kontrol et
+        selected_rows = st.session_state.data[st.session_state.data["Seç"] == True]
+        count_selected = len(selected_rows)
+        
+        if count_selected > 0:
+            st.success(f"✅ {count_selected} kanal seçildi.")
+            download_df = selected_rows
+            btn_label = f"💾 SADECE SEÇİLENLERİ İNDİR ({count_selected})"
+            file_name_suffix = "_secilenler"
+        else:
+            st.info("ℹ️ Hiçbir seçim yapmadınız, tüm liste indirilecek.")
+            download_df = st.session_state.data
+            btn_label = "💾 TÜM LİSTEYİ İNDİR"
+            file_name_suffix = "_tum_liste"
+
+        m3u_output = convert_df_to_m3u(download_df)
         st.download_button(
-            label="💾 Yeni M3U Olarak İndir",
+            label=btn_label,
             data=m3u_output,
-            file_name="duzenlenmis_liste.m3u",
+            file_name=f"iptv_listesi{file_name_suffix}.m3u",
             mime="text/plain",
             type="primary",
             use_container_width=True
@@ -131,41 +149,69 @@ st.subheader("Kanal Listesi Düzenleyici")
 
 if not st.session_state.data.empty:
     # İstatistikler
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     col1.metric("Toplam Kanal", len(st.session_state.data))
+    
+    selected_count = len(st.session_state.data[st.session_state.data["Seç"] == True])
+    col2.metric("Seçilen Kanal", selected_count)
+    
     unique_groups = st.session_state.data["Grup"].nunique()
-    col2.metric("Grup Sayısı", unique_groups)
+    col3.metric("Grup Sayısı", unique_groups)
 
     # Arama Kutusu
     search_term = st.text_input("🔍 Tablo içinde ara (Grup veya Kanal Adı):", "")
 
-    # Filtreleme (Görsel filtreleme, veriyi silmez)
+    # Görüntülenecek veriyi hazırla
     df_display = st.session_state.data
+    
     if search_term:
+        # Arama yaparken de Seç sütununu korumalıyız
         df_display = df_display[
             df_display["Grup"].str.contains(search_term, case=False) | 
             df_display["Kanal Adı"].str.contains(search_term, case=False)
         ]
 
-    # EDİTÖR TABLOSU (En önemli kısım)
-    # num_rows="dynamic" ile satır ekleyip silebilirsin
+    st.caption("İstediğiniz kanalların başındaki kutucuğu işaretleyin. Düzenleme yapmak için hücreye tıklayın.")
+
+    # EDİTÖR TABLOSU
     edited_df = st.data_editor(
         df_display,
         num_rows="dynamic",
         use_container_width=True,
+        hide_index=True, # Satır numaralarını gizle (daha temiz görünüm)
         column_config={
-            "URL": st.column_config.LinkColumn("Yayın Linki")
+            "Seç": st.column_config.CheckboxColumn(
+                "Seç",
+                help="İndirmek için seçin",
+                default=False,
+                width="small"
+            ),
+            "URL": st.column_config.LinkColumn(
+                "Yayın Linki",
+                width="medium"
+            ),
+            "Grup": st.column_config.TextColumn(
+                "Grup",
+                width="medium"
+            ),
+            "Kanal Adı": st.column_config.TextColumn(
+                "Kanal Adı",
+                width="large"
+            )
         },
-        height=600
+        height=600,
+        key="editor"
     )
 
-    # Değişiklikleri kaydetmek için (DataEditor anlık session'ı güncellemez, manuel update gerekir)
-    # Streamlit'te data_editor zaten bir çıktı verir, biz bunu session state'e geri yazarız ki indirme butonu güncel veriyi görsün.
-    if not edited_df.equals(st.session_state.data):
-         # Eğer arama yapılıyorsa sadece filtrelenmiş kısmı güncellemek karmaşık olabilir.
-         # Basitlik adına: Arama yokken yapılan değişiklikler ana veriyi günceller.
-         if not search_term:
-            st.session_state.data = edited_df
+    # Data editor'den gelen değişiklikleri (Checkbox tıklamaları dahil) ana veriye kaydetme
+    # Bu kısım biraz trick gerektirir çünkü arama yapıldığında indexler karışabilir.
+    # Pandas index'ini kullanarak update ediyoruz.
+    
+    if not edited_df.equals(df_display):
+        # Sadece değişen kısımları ana veriye (st.session_state.data) aktar
+        st.session_state.data.update(edited_df)
+        # Sayfayı yenileyerek butonun güncellenmesini sağla (Checkbox'a basınca buton yazısı değişsin diye)
+        st.rerun()
 
 else:
     st.info("👈 Başlamak için sol menüden bir link yapıştırın veya dosya yükleyin.")
