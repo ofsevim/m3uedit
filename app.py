@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-import requests
+import urllib.request
+import urllib.error
 import re
 import io
 
@@ -9,17 +10,26 @@ st.set_page_config(page_title="M3U Editör Pro (Web)", layout="wide", page_icon=
 
 # --- FONKSİYONLAR ---
 
-def parse_m3u_content(content):
-    """M3U içeriğini parse eder ve liste döndürür."""
-    lines = content.split('\n')
+def parse_m3u_lines(iterator):
+    """
+    urllib veya dosya satırları üzerinde döner.
+    """
     channels = []
     current_info = None
     
     # Regex deseni
     strict_pattern = re.compile(r'(\b|_|\[|\(|\|)(TR|TURK|TÜRK|TURKIYE|TÜRKİYE|YERLI|ULUSAL|ISTANBUL)(\b|_|\]|\)|\||:)', re.IGNORECASE)
 
-    for line in lines:
-        line = line.strip()
+    for line in iterator:
+        # Gelen satır byte ise decode et, string ise olduğu gibi al
+        if isinstance(line, bytes):
+            try:
+                line = line.decode('utf-8', errors='ignore').strip()
+            except:
+                continue
+        else:
+            line = line.strip()
+
         if not line:
             continue
             
@@ -67,18 +77,15 @@ def convert_df_to_m3u(df):
 
 # --- ARAYÜZ (UI) ---
 
-# Session State
 if 'data' not in st.session_state:
     st.session_state.data = pd.DataFrame(columns=["Seç", "Grup", "Kanal Adı", "URL"])
 
-# Sol Menü (Sidebar)
 with st.sidebar:
     st.title("IPTV MANAGER")
     st.markdown("---")
     
     mode = st.radio("Yükleme Yöntemi", ["🌐 Linkten Yükle", "📂 Dosya Yükle"])
     
-    # Veri Yükleme İşlemleri
     new_data = None
     
     if mode == "🌐 Linkten Yükle":
@@ -89,32 +96,43 @@ with st.sidebar:
             if url:
                 try:
                     with st.spinner('Link indiriliyor ve taranıyor...'):
-                        # --- DÜZELTME BURADA ---
-                        # Sunucuya kendimizi tarayıcı gibi tanıtıyoruz
-                        headers = {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                        }
-                        # verify=False, SSL sertifika hatalarını yok sayar (bazen iptv'lerde sertifika sorunu olur)
-                        response = requests.get(url, headers=headers, timeout=30, verify=False)
+                        # --- DEĞİŞİKLİK BURADA: URLLIB KULLANIMI ---
+                        # Masaüstü uygulamasındaki yöntemin aynısı
+                        headers = {'User-Agent': 'Mozilla/5.0'}
+                        req = urllib.request.Request(url, headers=headers)
                         
-                        if response.status_code == 200:
-                            raw_channels = parse_m3u_content(response.text)
+                        # SSL sertifika hatalarını yok saymak için context (gerekirse)
+                        import ssl
+                        ctx = ssl.create_default_context()
+                        ctx.check_hostname = False
+                        ctx.verify_mode = ssl.CERT_NONE
+                        
+                        with urllib.request.urlopen(req, timeout=30, context=ctx) as response:
+                            # Response bir iteratör gibi davranır
+                            raw_channels = parse_m3u_lines(response)
                             final_channels = filter_channels(raw_channels, only_tr)
                             new_data = pd.DataFrame(final_channels)
-                            st.success(f"İşlem Tamam! Toplam {len(final_channels)} kanal bulundu.")
-                        else:
-                            st.error(f"Sunucu hatası: {response.status_code} - {response.reason}")
                             
+                        if not final_channels:
+                            st.warning("Linkten veri çekildi ama kanal bulunamadı veya format hatalı.")
+                        else:
+                            st.success(f"İşlem Tamam! Toplam {len(final_channels)} kanal bulundu.")
+                            
+                except urllib.error.HTTPError as e:
+                     st.error(f"HTTP Hatası: {e.code} - {e.reason}")
+                except urllib.error.URLError as e:
+                     st.error(f"Bağlantı Hatası: {e.reason}")
                 except Exception as e:
-                    st.error(f"Bağlantı Hatası: {e}")
+                    st.error(f"Beklenmeyen Hata: {e}")
             else:
                 st.warning("Lütfen bir link girin.")
 
     elif mode == "📂 Dosya Yükle":
         uploaded_file = st.file_uploader("M3U Dosyası Seç", type=['m3u', 'm3u8'])
         if uploaded_file is not None:
-            stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8"))
-            raw_channels = parse_m3u_content(stringio.read())
+            # Dosyayı satır satır okumak için
+            stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors='ignore'))
+            raw_channels = parse_m3u_lines(stringio)
             new_data = pd.DataFrame(raw_channels)
             st.success(f"Dosya yüklendi. {len(raw_channels)} kanal.")
 
@@ -125,7 +143,6 @@ with st.sidebar:
 
     st.markdown("---")
     
-    # İndirme Butonu Mantığı
     if not st.session_state.data.empty:
         selected_rows = st.session_state.data[st.session_state.data["Seç"] == True]
         count_selected = len(selected_rows)
