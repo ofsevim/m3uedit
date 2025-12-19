@@ -8,17 +8,23 @@ import io
 # Sayfa Ayarları
 st.set_page_config(page_title="M3U Editör Pro (Web)", layout="wide", page_icon="📺")
 
+# --- GLOBAL TANIMLAMALAR ---
+
+# TR kanal tespiti için regex pattern (parse ve filter'da ortak kullanılıyor)
+TR_PATTERN = re.compile(
+    r'(\b|_|\[|\(|\|)(TR|TURK|TÜRK|TURKIYE|TÜRKİYE|YERLI|ULUSAL|ISTANBUL)(\b|_|\]|\)|\||:)', 
+    re.IGNORECASE
+)
+
 # --- FONKSİYONLAR ---
 
 def parse_m3u_lines(iterator):
     """
     urllib veya dosya satırları üzerinde döner.
+    M3U formatındaki kanalları parse eder ve liste olarak döner.
     """
     channels = []
     current_info = None
-    
-    # Regex deseni
-    strict_pattern = re.compile(r'(\b|_|\[|\(|\|)(TR|TURK|TÜRK|TURKIYE|TÜRKİYE|YERLI|ULUSAL|ISTANBUL)(\b|_|\]|\)|\||:)', re.IGNORECASE)
 
     for line in iterator:
         # Gelen satır byte ise decode et, string ise olduğu gibi al
@@ -55,15 +61,17 @@ def parse_m3u_lines(iterator):
     return channels
 
 def filter_channels(channels, only_tr=False):
-    """Kanalları filtreler."""
+    """
+    Kanalları filtreler.
+    only_tr=True ise sadece Türk kanallarını döner (TR_PATTERN ile eşleşenler).
+    """
     if not only_tr:
         return channels
         
     filtered = []
-    strict_pattern = re.compile(r'(\b|_|\[|\(|\|)(TR|TURK|TÜRK|TURKIYE|TÜRKİYE|YERLI|ULUSAL|ISTANBUL)(\b|_|\]|\)|\||:)', re.IGNORECASE)
     
     for ch in channels:
-        if strict_pattern.search(ch["Grup"]):
+        if TR_PATTERN.search(ch["Grup"]):
             filtered.append(ch)
             
     return filtered
@@ -114,16 +122,22 @@ with st.sidebar:
                             new_data = pd.DataFrame(final_channels)
                             
                         if not final_channels:
-                            st.warning("Linkten veri çekildi ama kanal bulunamadı veya format hatalı.")
+                            st.warning("⚠️ Linkten veri çekildi ama kanal bulunamadı veya format hatalı.")
                         else:
-                            st.success(f"İşlem Tamam! Toplam {len(final_channels)} kanal bulundu.")
+                            st.success(f"✅ İşlem Tamam! Toplam {len(final_channels)} kanal bulundu.")
                             
                 except urllib.error.HTTPError as e:
-                     st.error(f"HTTP Hatası: {e.code} - {e.reason}")
+                     st.error(f"🚫 HTTP Hatası: {e.code} - {e.reason}")
+                     st.info("💡 İpucu: Link doğru mu? Bazı sağlayıcılar erişim kısıtlaması olabilir.")
                 except urllib.error.URLError as e:
-                     st.error(f"Bağlantı Hatası: {e.reason}")
+                     st.error(f"🔌 Bağlantı Hatası: {e.reason}")
+                     st.info("💡 İpucu: İnternet bağlantınızı kontrol edin veya VPN kullanmayı deneyin.")
+                except TimeoutError:
+                     st.error("⏱️ Zaman Aşımı: Sunucu çok yavaş yanıt veriyor (30 saniye)")
+                     st.info("💡 İpucu: Daha sonra tekrar deneyin veya başka bir link kullanın.")
                 except Exception as e:
-                    st.error(f"Beklenmeyen Hata: {e}")
+                    st.error(f"❌ Beklenmeyen Hata: {str(e)}")
+                    st.info("💡 İpucu: Link formatı M3U olmalı. Örnek: http://example.com/playlist.m3u")
             else:
                 st.warning("Lütfen bir link girin.")
 
