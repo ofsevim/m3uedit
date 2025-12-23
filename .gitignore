@@ -48,3 +48,6 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Visitor Counter Data
+visitor_data.json

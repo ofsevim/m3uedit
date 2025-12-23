@@ -29,6 +29,12 @@ IPTV M3U playlist dosyalarını kolayca yönetmek, düzenlemek ve filtrelemek i�
 - Seçilen kanal sayısı
 - Benzersiz grup sayısı
 
+### 👥 Ziyaretçi Sayacı
+- Toplam ziyaret sayısı
+- Benzersiz ziyaretçi takibi
+- İlk ve son ziyaret tarihleri
+- Otomatik oturum yönetimi
+
 ## 🚀 Hızlı Başlangıç
 
 ### Gereksinimler
@@ -111,6 +117,7 @@ m3uedit/
 ├── .devcontainer/
 │   └── devcontainer.json    # Dev Container yapılandırması
 ├── app.py                    # Ana uygulama
+├── visitor_counter.py        # Ziyaretçi sayacı modülü
 ├── requirements.txt          # Python bağımlılıkları
 └── README.md                 # Bu dosya
 ```

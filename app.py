@@ -4,6 +4,9 @@ import urllib.request
 import urllib.error
 import re
 import io
+from visitor_counter import VisitorCounter
+import hashlib
+import time
 
 # Sayfa Ayarları
 st.set_page_config(page_title="M3U Editör Pro (Web)", layout="wide", page_icon="📺")
@@ -84,6 +87,18 @@ def convert_df_to_m3u(df):
     return content
 
 # --- ARAYÜZ (UI) ---
+
+# Ziyaretçi sayacı başlat
+if 'visitor_counter' not in st.session_state:
+    st.session_state.visitor_counter = VisitorCounter()
+
+# Benzersiz oturum ID'si oluştur (her kullanıcı için)
+if 'session_id' not in st.session_state:
+    # Tarayıcı bilgilerini ve zamanı kullanarak benzersiz bir ID oluştur
+    unique_str = f"{time.time()}_{st.session_state.get('_is_running_with_streamlit', '')}"
+    st.session_state.session_id = hashlib.md5(unique_str.encode()).hexdigest()
+    # İlk ziyaret, sayacı artır
+    st.session_state.visitor_counter.increment_visit(st.session_state.session_id)
 
 if 'data' not in st.session_state:
     st.session_state.data = pd.DataFrame(columns=["Seç", "Grup", "Kanal Adı", "URL"])
@@ -228,3 +243,63 @@ if not st.session_state.data.empty:
 
 else:
     st.info("👈 Başlamak için sol menüden bir link yapıştırın veya dosya yükleyin.")
+
+# --- ZİYARETÇİ SAYACI (Sayfa Altı) ---
+st.markdown("---")
+st.markdown("### 📊 Ziyaretçi İstatistikleri")
+
+# İstatistikleri al
+stats = st.session_state.visitor_counter.get_stats()
+
+# Görsel istatistik kartları
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.metric(
+        label="👥 Toplam Ziyaret",
+        value=f"{stats['total_visits']:,}".replace(',', '.')
+    )
+
+with col2:
+    st.metric(
+        label="🌟 Benzersiz Ziyaretçi",
+        value=f"{stats['unique_visitors']:,}".replace(',', '.')
+    )
+
+with col3:
+    # İlk ziyaret tarihini formatla
+    try:
+        from datetime import datetime
+        first_visit = datetime.fromisoformat(stats['first_visit'])
+        first_visit_str = first_visit.strftime("%d.%m.%Y")
+    except:
+        first_visit_str = "Bilinmiyor"
+    
+    st.metric(
+        label="📅 İlk Ziyaret",
+        value=first_visit_str
+    )
+
+with col4:
+    # Son ziyaret tarihini formatla
+    try:
+        from datetime import datetime
+        last_visit = datetime.fromisoformat(stats['last_visit'])
+        last_visit_str = last_visit.strftime("%d.%m.%Y %H:%M")
+    except:
+        last_visit_str = "Bilinmiyor"
+    
+    st.metric(
+        label="🕒 Son Ziyaret",
+        value=last_visit_str
+    )
+
+# Footer
+st.markdown(
+    """
+    <div style='text-align: center; color: #888; padding: 20px; margin-top: 20px;'>
+        <p>Made with ❤️ | M3U Editör Pro © 2025</p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
