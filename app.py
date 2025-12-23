@@ -7,6 +7,7 @@ import io
 from visitor_counter import VisitorCounter
 import hashlib
 import time
+from streamlit_cookies_manager import EncryptedCookieManager
 
 # Sayfa Ayarları
 st.set_page_config(page_title="M3U Editör Pro (Web)", layout="wide", page_icon="📺")
@@ -88,17 +89,37 @@ def convert_df_to_m3u(df):
 
 # --- ARAYÜZ (UI) ---
 
+# Cookie Manager'ı başlat (benzersiz ziyaretçi takibi için)
+if 'cookies' not in st.session_state:
+    st.session_state.cookies = EncryptedCookieManager(
+        prefix="m3uedit_",
+        password="m3u_secret_key_2025"  # Güvenli bir şifre kullanın
+    )
+
+# Cookie'leri yükle
+if not st.session_state.cookies.ready():
+    st.stop()
+
 # Ziyaretçi sayacı başlat
 if 'visitor_counter' not in st.session_state:
     st.session_state.visitor_counter = VisitorCounter()
 
-# Benzersiz oturum ID'si oluştur (her kullanıcı için)
-if 'session_id' not in st.session_state:
-    # Tarayıcı bilgilerini ve zamanı kullanarak benzersiz bir ID oluştur
-    unique_str = f"{time.time()}_{st.session_state.get('_is_running_with_streamlit', '')}"
-    st.session_state.session_id = hashlib.md5(unique_str.encode()).hexdigest()
-    # İlk ziyaret, sayacı artır
-    st.session_state.visitor_counter.increment_visit(st.session_state.session_id)
+# Cookie'den session ID al veya yeni oluştur
+cookies = st.session_state.cookies
+if 'visitor_id' not in cookies:
+    # Yeni ziyaretçi - benzersiz ID oluştur
+    unique_str = f"{time.time()}_{hashlib.md5(str(time.time()).encode()).hexdigest()}"
+    visitor_id = hashlib.md5(unique_str.encode()).hexdigest()
+    cookies['visitor_id'] = visitor_id
+    cookies.save()
+    
+    # İlk ziyaret, sayacı artır (hem toplam hem benzersiz)
+    st.session_state.visitor_counter.increment_visit(visitor_id)
+    st.session_state.is_new_visitor = True
+else:
+    # Mevcut ziyaretçi - sadece visitor_id'yi al, sayaçları artırma
+    visitor_id = cookies['visitor_id']
+    st.session_state.is_new_visitor = False
 
 if 'data' not in st.session_state:
     st.session_state.data = pd.DataFrame(columns=["Seç", "Grup", "Kanal Adı", "URL"])
@@ -256,14 +277,16 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.metric(
-        label="👥 Toplam Ziyaret",
-        value=f"{stats['total_visits']:,}".replace(',', '.')
+        label="🌟 Benzersiz Ziyaretçi",
+        value=f"{stats['unique_visitors']:,}".replace(',', '.'),
+        help="Tarayıcı çerezlerine göre benzersiz ziyaretçi sayısı"
     )
 
 with col2:
     st.metric(
-        label="🌟 Benzersiz Ziyaretçi",
-        value=f"{stats['unique_visitors']:,}".replace(',', '.')
+        label="📊 Toplam Kayıt",
+        value=f"{stats['total_visits']:,}".replace(',', '.'),
+        help="Toplam kayıtlı ziyaret sayısı (benzersiz ziyaretçilere eşittir)"
     )
 
 with col3:
