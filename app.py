@@ -300,7 +300,7 @@ with col4:
 st.markdown(
     """
     <div style='text-align: center; color: #888; padding: 20px; margin-top: 20px;'>
-        <p>Made with ❤️ | M3U Editör Pro © 2025</p>
+        <p>© 2025 Osoft - M3U Editör Pro</p>
     </div>
     """,
     unsafe_allow_html=True
