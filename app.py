@@ -1,13 +1,37 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import urllib.request
 import urllib.error
 import re
 import io
+import json
 from visitor_counter import VisitorCounter
 import hashlib
 import time
 import uuid
+
+# Simple persistence for user history (last loads/exports)
+HISTORY_FILE = "history.json"
+
+def _load_history():
+    try:
+        with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def _save_history(hist):
+    try:
+        with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(hist, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+def add_history(entry):
+    hist = _load_history()
+    hist.append(entry)
+    _save_history(hist)
 
 # Sayfa Ayarları
 st.set_page_config(page_title="M3U Editör Pro (Web)", layout="wide", page_icon="📺")
@@ -44,7 +68,11 @@ def parse_m3u_lines(iterator):
             continue
             
         if line.startswith("#EXTINF"):
-            info = {"Grup": "Genel", "Kanal Adı": "Bilinmeyen", "URL": ""}
+            info = {"Grup": "Genel", "Kanal Adı": "Bilinmeyen", "URL": "", "LogoURL": ""}
+            # TVG logos may be provided as tvg-logo="<url>"
+            logo_match = re.search(r'tvg-logo="([^"]*)"', line)
+            if logo_match:
+                info["LogoURL"] = logo_match.group(1)
             
             grp = re.search(r'group-title="([^"]*)"', line)
             if grp:
@@ -87,6 +115,34 @@ def convert_df_to_m3u(df):
         content += f'#EXTINF:-1 group-title="{row["Grup"]}",{row["Kanal Adı"]}\n{row["URL"]}\n'
     return content
 
+def render_live_player(stream_url: str, height: int = 420) -> str:
+    """HTML snippet to embed a lightweight HLS player using hls.js.
+    Supports HLS streams (m3u8) and falls back to native playback when possible.
+    """
+    html = f'''
+    <div style="width:100%; height:{height}px; background:#000;">
+      <video id="m3u_player" controls playsinline style="width:100%; height:100%;"></video>
+      <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+      <script>
+        (function(){{
+          var video = document.getElementById('m3u_player');
+          var url = "{stream_url}";
+          if (window.Hls && Hls.isSupported()) {{
+            var hls = new Hls();
+            hls.loadSource(url);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, function() {{ video.play(); }});
+          }} else if (video.canPlayType('application/vnd.apple.mpegurl')) {{
+            video.src = url; video.play();
+          }} else {{
+            video.outerHTML = '<div style="color:#fff; padding:20px;">Bu tarayıcı bu akışı oynatamıyor: '+ url +'</div>';
+          }}
+        })();
+      </script>
+    </div>
+    '''
+    return html
+
 # --- ARAYÜZ (UI) ---
 
 # Ziyaretçi sayacı başlat
@@ -108,6 +164,40 @@ with st.sidebar:
     st.markdown("---")
     
     mode = st.radio("Yükleme Yöntemi", ["🌐 Linkten Yükle", "📂 Dosya Yükle"])
+    # Basit tema desteği
+    if 'theme' not in st.session_state:
+        st.session_state.theme = 'Açık'
+    theme = st.radio("Tema", ["Açık", "Koyu"], index=0 if st.session_state.theme == 'Açık' else 1)
+    if theme != st.session_state.theme:
+        st.session_state.theme = theme
+        # Basit CSS teması uygulama
+        if theme == 'Koyu':
+            st.markdown("""
+                <style>
+                [data-testid="stAppViewContainer"]{ background: #0b1020; color: #e6e6e6; }
+                </style>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+                <style>
+                [data-testid="stAppViewContainer"]{ background: #ffffff; color: #000000; }
+                </style>
+            """, unsafe_allow_html=True)
+
+    # Grup bazlı filtreleme (kenar durumlarda veri olduğunda etkinleşir)
+    selected_groups = []
+    if not st.session_state.data.empty:
+        # Basit sıralama seçeneği
+        sort_by = st.sidebar.selectbox("Sırala", ["Grup", "Kanal Adı", "URL"] , index=0)
+        sort_dir = st.sidebar.radio("Yön", ["A → Z", "Z → A"], index=0)
+        if sort_by and not st.session_state.data.empty:
+            st.session_state.data = st.session_state.data.sort_values(by=sort_by, ascending=(sort_dir=="A → Z"))
+        try:
+            group_options = sorted(st.session_state.data["Grup"].astype(str).dropna().unique())
+        except Exception:
+            group_options = []
+        if group_options:
+            selected_groups = st.multiselect("Grupları filtrele", group_options, default=group_options)
     
     new_data = None
     
@@ -132,14 +222,23 @@ with st.sidebar:
                         
                         with urllib.request.urlopen(req, timeout=30, context=ctx) as response:
                             # Response bir iteratör gibi davranır
+                            duplicates = 0
                             raw_channels = parse_m3u_lines(response)
                             final_channels = filter_channels(raw_channels, only_tr)
                             new_data = pd.DataFrame(final_channels)
+                            # Basit duplicates kontrolu için bilgi ekle
+                            duplicates = new_data.duplicated(subset=["Grup", "Kanal Adı", "URL"]).sum() if not new_data.empty else 0
                             
-                        if not final_channels:
-                            st.warning("⚠️ Linkten veri çekildi ama kanal bulunamadı veya format hatalı.")
+        if not final_channels:
+            st.warning("⚠️ Linkten veri çekildi ama kanal bulunamadı veya format hatalı.")
                         else:
                             st.success(f"✅ İşlem Tamam! Toplam {len(final_channels)} kanal bulundu.")
+                            # History kaydı (URL modu için URL, yoksa None)
+                            _url_for_history = url if 'url' in locals() else None
+                            add_history({"type": "load", "count": int(len(final_channels)), "url": _url_for_history, "time": time.time()})
+                        # Çiftler var mı bildirimi
+                        if duplicates:
+                            st.info(f"⚠️ Tespit edilen tekrarlı kanal sayısı: {int(duplicates)}. Çiftleri temizlemek için 'Çiftleri Temizle' tuşuna basabilirsiniz.")
                             
                 except urllib.error.HTTPError as e:
                      st.error(f"🚫 HTTP Hatası: {e.code} - {e.reason}")
@@ -148,8 +247,8 @@ with st.sidebar:
                      st.error(f"🔌 Bağlantı Hatası: {e.reason}")
                      st.info("💡 İpucu: İnternet bağlantınızı kontrol edin veya VPN kullanmayı deneyin.")
                 except TimeoutError:
-                     st.error("⏱️ Zaman Aşımı: Sunucu çok yavaş yanıt veriyor (30 saniye)")
-                     st.info("💡 İpucu: Daha sonra tekrar deneyin veya başka bir link kullanın.")
+                      st.error("⏱️ Zaman Aşımı: Sunucu çok yavaş yanıt veriyor (30 saniye)")
+                      st.info("💡 İpucu: Daha sonra tekrar deneyin veya başka bir link kullanın.")
                 except Exception as e:
                     st.error(f"❌ Beklenmeyen Hata: {str(e)}")
                     st.info("💡 İpucu: Link formatı M3U olmalı. Örnek: http://example.com/playlist.m3u")
@@ -166,9 +265,36 @@ with st.sidebar:
             st.success(f"Dosya yüklendi. {len(raw_channels)} kanal.")
 
     if new_data is not None:
+        # Ziyaretçi sonrası ek alanlar
         if "Seç" not in new_data.columns:
             new_data.insert(0, "Seç", False)
+        if "Favori" not in new_data.columns:
+            new_data.insert(1, "Favori", False)
+        if "LogoURL" not in new_data.columns:
+            new_data.insert(2, "LogoURL", "")
+        if "Durum" not in new_data.columns:
+            new_data.insert(3, "Durum", "")
         st.session_state.data = new_data
+
+    # Bulk actions for channel list
+    if not st.session_state.data.empty:
+        cols_actions = st.columns([1,1,1])
+        if cols_actions[0].button("Tümünü Seç"):
+            st.session_state.data["Seç"] = True
+            st.experimental_rerun()
+        if cols_actions[1].button("Seçiliyi Kaldır"):
+            st.session_state.data["Seç"] = False
+            st.experimental_rerun()
+        if cols_actions[2].button("Çiftleri Temizle"):
+            # Basit duplicate temizleme: URL + Kanal Adı + Grup kombinasyonunu kontrol eder
+            before = len(st.session_state.data)
+            st.session_state.data = st.session_state.data.drop_duplicates(subset=["Grup","Kanal Adı","URL"], keep='first')
+            after = len(st.session_state.data)
+            st.experimental_rerun()
+        # Seçili kanalları sil
+        if st.button("Seçili kanalları Sil"):
+            st.session_state.data = st.session_state.data[~st.session_state.data["Seç"]]
+            st.experimental_rerun()
 
     st.markdown("---")
     
@@ -196,9 +322,57 @@ with st.sidebar:
             type="primary",
             use_container_width=True
         )
+        # URL sağlık kontrolü
+        if not st.session_state.data.empty:
+            if st.button("🔍 URL Sağlık Kontrolü"):
+                with st.spinner("Sağlık kontrolü çalışıyor..."):
+                    df = st.session_state.data.copy()
+                    statuses = []
+                    for url in df["URL"].astype(str):
+                        if not url or url.strip() == "":
+                            statuses.append("Boş URL")
+                            continue
+                        try:
+                            with urllib.request.urlopen(url, timeout=5) as resp:
+                                code = getattr(resp, 'status', 200)
+                                statuses.append("OK" if int(code) < 400 else f"{code}")
+                        except Exception:
+                            statuses.append("HATA")
+                    df.loc[:, "Durum"] = statuses
+                    st.session_state.data = df
+                    st.success("Durumlar güncellendi.")
+        # JSON Export (seçilmişler veya tüm liste)
+        json_output = download_df.to_json(orient="records", force_ascii=False)
+        st.download_button(
+            label=f"💾 JSON ({count_selected} öğe)",
+            data=json_output,
+            file_name=f"iptv_listesi{file_name_suffix}.json",
+            mime="application/json",
+            use_container_width=True
+        )
+        # CSV Export
+        csv_output = download_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label=f"💾 CSV ({count_selected} öğe)",
+            data=csv_output,
+            file_name=f"iptv_listesi{file_name_suffix}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+        # History kaydı
+        add_history({"type": "export", "count": int(len(download_df)), "format": "json/csv", "time": time.time()})
 
 # Ana Ekran
 st.subheader("Kanal Listesi Düzenleyici")
+
+# Canlı Oynatıcı (Test Et)
+st.subheader("Canlı Oynatıcı (Test Et)")
+live_stream_url = st.text_input("Oynatılacak URL:", value="")
+if st.button("Oynat", key="play_live_btn"):
+    if live_stream_url and live_stream_url.strip() != "":
+        st.markdown("Canlı oynatıcı:")
+        # height ayarıyla player alanını büyütüp görebiliriz
+        components.html(render_live_player(live_stream_url.strip(), height=420), height=520)
 
 if not st.session_state.data.empty:
     col1, col2, col3 = st.columns(3)
@@ -213,6 +387,9 @@ if not st.session_state.data.empty:
     search_term = st.text_input("🔍 Tablo içinde ara (Grup veya Kanal Adı):", "")
 
     df_display = st.session_state.data
+    # Grup filtrelemesi uygulanır
+    if selected_groups:
+        df_display = df_display[df_display["Grup"].isin(selected_groups)]
     
     if search_term:
         df_display = df_display[
@@ -305,3 +482,17 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
+# Kanal Logoları (görsel ipuçları)
+if not st.session_state.data.empty:
+    logos = st.session_state.data["LogoURL"].dropna().astype(str).tolist()
+    if logos:
+        st.subheader("Kanal Logoları (örnekler)")
+        # İlk birkaç logoyu gösterecek şekilde basit bir çubuk
+        logo_cols = st.columns(min(6, len(logos)))
+        for i, url in enumerate(logos[:min(6, len(logos))]):
+            with logo_cols[i]:
+                try:
+                    st.image(url, width=100)
+                except Exception:
+                    st.markdown(url)
