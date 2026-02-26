@@ -116,31 +116,31 @@ def convert_df_to_m3u(df):
     return content
 
 def render_live_player(stream_url: str, height: int = 420) -> str:
-    """HTML snippet to embed a lightweight HLS player using hls.js.
-    Supports HLS streams (m3u8) and falls back to native playback when possible.
+    """HTML snippet to embed a lightweight HLS player using a non-f-string approach.
+    This avoids f-string brace escaping issues in Python.
     """
-    html = f'''
-    <div style="width:100%; height:{height}px; background:#000;">
-      <video id="m3u_player" controls playsinline style="width:100%; height:100%;"></video>
-      <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-      <script>
-        (function(){{
-          var video = document.getElementById('m3u_player');
-          var url = "{stream_url}";
-          if (window.Hls && Hls.isSupported()) {{
-            var hls = new Hls();
-            hls.loadSource(url);
-            hls.attachMedia(video);
-            hls.on(Hls.Events.MANIFEST_PARSED, function() {{ video.play(); }});
-          }} else if (video.canPlayType('application/vnd.apple.mpegurl')) {{
-            video.src = url; video.play();
-          }} else {{
-            video.outerHTML = '<div style="color:#fff; padding:20px;">Bu tarayıcı bu akışı oynatamıyor: '+ url +'</div>';
-          }}
-        })();
-      </script>
-    </div>
-    '''
+    html = (
+        "<div style='width:100%; height:%dpx; background:#000;'>" % height +
+        "<video id='m3u_player' controls playsinline style='width:100%; height:100%;'></video>" +
+        "<script src='https://cdn.jsdelivr.net/npm/hls.js@latest'></script>" +
+        "<script>" +
+        "(function(){" +
+        "  var video = document.getElementById('m3u_player');" +
+        "  var url = \"" + stream_url + "\";" +
+        "  if (window.Hls && Hls.isSupported()) {" +
+        "    var hls = new Hls();" +
+        "    hls.loadSource(url);" +
+        "    hls.attachMedia(video);" +
+        "    hls.on(Hls.Events.MANIFEST_PARSED, function() { video.play(); });" +
+        "  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {" +
+        "    video.src = url; video.play();" +
+        "  } else {" +
+        "    video.outerHTML = '<div style=\"color:#fff; padding:20px;\">Bu tarayıcı bu akışı oynatamıyor: '+ url +'</div>';" +
+        "  }" +
+        "})();" +
+        "</script>" +
+        "</div>"
+    )
     return html
 
 # --- ARAYÜZ (UI) ---
