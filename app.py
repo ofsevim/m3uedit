@@ -221,24 +221,19 @@ with st.sidebar:
                         ctx.verify_mode = ssl.CERT_NONE
                         
                         with urllib.request.urlopen(req, timeout=30, context=ctx) as response:
-                            # Response bir iteratör gibi davranır
                             duplicates = 0
                             raw_channels = parse_m3u_lines(response)
                             final_channels = filter_channels(raw_channels, only_tr)
                             new_data = pd.DataFrame(final_channels)
-                            # Basit duplicates kontrolu için bilgi ekle
                             duplicates = new_data.duplicated(subset=["Grup", "Kanal Adı", "URL"]).sum() if not new_data.empty else 0
                             
-        if not final_channels:
-            st.warning("⚠️ Linkten veri çekildi ama kanal bulunamadı veya format hatalı.")
-                        else:
-                            st.success(f"✅ İşlem Tamam! Toplam {len(final_channels)} kanal bulundu.")
-                            # History kaydı (URL modu için URL, yoksa None)
-                            _url_for_history = url if 'url' in locals() else None
-                            add_history({"type": "load", "count": int(len(final_channels)), "url": _url_for_history, "time": time.time()})
-                        # Çiftler var mı bildirimi
-                        if duplicates:
-                            st.info(f"⚠️ Tespit edilen tekrarlı kanal sayısı: {int(duplicates)}. Çiftleri temizlemek için 'Çiftleri Temizle' tuşuna basabilirsiniz.")
+                            if not final_channels:
+                                st.warning("⚠️ Linkten veri çekildi ama kanal bulunamadı veya format hatalı.")
+                            else:
+                                st.success(f"✅ İşlem Tamam! Toplam {len(final_channels)} kanal bulundu.")
+                                add_history({"type": "load", "count": int(len(final_channels)), "url": url, "time": time.time()})
+                            if duplicates:
+                                st.info(f"⚠️ Tespit edilen tekrarlı kanal sayısı: {int(duplicates)}. Çiftleri temizlemek için 'Çiftleri Temizle' tuşuna basabilirsiniz.")
                             
                 except urllib.error.HTTPError as e:
                      st.error(f"🚫 HTTP Hatası: {e.code} - {e.reason}")
@@ -397,8 +392,13 @@ if not st.session_state.data.empty:
             df_display["Kanal Adı"].str.contains(search_term, case=False)
         ]
 
-    st.caption("İstediğiniz kanalların başındaki kutucuğu işaretleyin.")
+    st.caption("İstediğiniz kanalların başındaki kutucuğu işaretleyin veya ▶ butonuna basarak oynatın.")
 
+    # Oynatılacak kanal için session state
+    if 'play_channel' not in st.session_state:
+        st.session_state.play_channel = None
+
+    # Tabloyu düzenle
     edited_df = st.data_editor(
         df_display,
         num_rows="dynamic",
@@ -406,13 +406,59 @@ if not st.session_state.data.empty:
         hide_index=True,
         column_config={
             "Seç": st.column_config.CheckboxColumn("Seç", default=False, width="small"),
+            "Favori": st.column_config.CheckboxColumn("⭐", default=False, width="small"),
             "URL": st.column_config.LinkColumn("Yayın Linki", width="medium"),
             "Grup": st.column_config.TextColumn("Grup", width="medium"),
-            "Kanal Adı": st.column_config.TextColumn("Kanal Adı", width="large")
+            "Kanal Adı": st.column_config.TextColumn("Kanal Adı", width="large"),
+            "LogoURL": st.column_config.TextColumn("Logo", width="small"),
+            "Durum": st.column_config.TextColumn("Durum", width="small")
         },
         height=600,
-        key="editor"
+        key="editor",
+        disabled=["Grup", "Kanal Adı", "URL", "LogoURL", "Durum"],
+        hideable=True
     )
+
+    # Kanal oynatma butonu için form
+    with st.form("play_form"):
+        col_play1, col_play2 = st.columns([3, 1])
+        with col_play1:
+            play_channel_name = st.selectbox("Oynatılacak Kanal", 
+                options=df_display["Kanal Adı"].tolist() if not df_display.empty else [],
+                index=None, placeholder="Kanal seçin...")
+        with col_play2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            play_submit = st.form_submit_button("▶ OYNAT", use_container_width=True)
+        
+        if play_submit and play_channel_name:
+            selected_row = df_display[df_display["Kanal Adı"] == play_channel_name]
+            if not selected_row.empty:
+                st.session_state.play_channel = {
+                    "name": play_channel_name,
+                    "url": selected_row.iloc[0]["URL"],
+                    "logo": selected_row.iloc[0].get("LogoURL", "")
+                }
+
+    # Player bölümü
+    if st.session_state.play_channel:
+        st.markdown("---")
+        pc = st.session_state.play_channel
+        st.subheader("▶ " + pc["name"])
+        
+        # Logo varsa göster
+        if pc.get("logo"):
+            try:
+                st.image(pc["logo"], width=150)
+            except:
+                pass
+        
+        # Player
+        st.markdown("**Yayın:** " + pc["url"])
+        components.html(render_live_player(pc["url"], height=450), height=550)
+        
+        if st.button("⏹ Oynatmayı Durdur"):
+            st.session_state.play_channel = None
+            st.rerun()
 
     if not edited_df.equals(df_display):
         st.session_state.data.update(edited_df)
