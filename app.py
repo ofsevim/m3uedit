@@ -398,25 +398,17 @@ if not st.session_state.data.empty:
     if 'play_channel' not in st.session_state:
         st.session_state.play_channel = None
 
+    # Mevcut kolonları kontrol et
+    available_columns = list(df_display.columns) if not df_display.empty else []
+
     # Tabloyu düzenle
     edited_df = st.data_editor(
         df_display,
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
-        column_config={
-            "Seç": st.column_config.CheckboxColumn("Seç", default=False, width="small"),
-            "Favori": st.column_config.CheckboxColumn("⭐", default=False, width="small"),
-            "URL": st.column_config.LinkColumn("Yayın Linki", width="medium"),
-            "Grup": st.column_config.TextColumn("Grup", width="medium"),
-            "Kanal Adı": st.column_config.TextColumn("Kanal Adı", width="large"),
-            "LogoURL": st.column_config.TextColumn("Logo", width="small"),
-            "Durum": st.column_config.TextColumn("Durum", width="small")
-        },
         height=600,
-        key="editor",
-        disabled=["Grup", "Kanal Adı", "URL", "LogoURL", "Durum"],
-        hideable=True
+        key="editor"
     )
 
     # Kanal oynatma butonu için form
