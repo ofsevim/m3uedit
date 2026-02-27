@@ -12,11 +12,15 @@ import hashlib
 import time
 import uuid
 import logging
+from typing import Iterable, List, Dict
+
 # Log configuration
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+if not logging.getLogger().hasHandlers():
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        force=True
+    )
 logger = logging.getLogger(__name__)
 
 # --- PAGE CONFIG MUST BE FIRST ---
@@ -110,12 +114,12 @@ TR_PATTERN = re.compile(
 
 # --- FONKSİYONLAR ---
 
-def parse_m3u_lines(iterator: iter) -> list[dict]:
+def parse_m3u_lines(iterator: Iterable) -> List[Dict]:
     """
     Parses M3U format lines and extracts channel information.
 
     Args:
-        iterator: An iterator containing lines of the M3U file (e.g., file object or string lines).
+        iterator: An iterable containing lines of the M3U file.
 
     Returns:
         A list of dictionaries containing parsed channel details.
@@ -162,7 +166,7 @@ def parse_m3u_lines(iterator: iter) -> list[dict]:
 
     return channels
 
-def filter_channels(channels: list[dict], only_tr: bool = False) -> list[dict]:
+def filter_channels(channels: List[Dict], only_tr: bool = False) -> List[Dict]:
     """
     Filters channels based on the Turkish language pattern if specified.
 
@@ -186,7 +190,7 @@ def filter_channels(channels: list[dict], only_tr: bool = False) -> list[dict]:
 
 def convert_df_to_m3u(df: pd.DataFrame) -> str:
     """
-    Converts a pandas DataFrame back into M3U playlist format.
+    Converts a pandas DataFrame back into M3U playlist format using efficient string building.
 
     Args:
         df: DataFrame containing channel information.
@@ -194,10 +198,11 @@ def convert_df_to_m3u(df: pd.DataFrame) -> str:
     Returns:
         Structured M3U playlist content as a string.
     """
-    content = "#EXTM3U\n"
-    for index, row in df.iterrows():
-        content += f'#EXTINF:-1 group-title="{row["Grup"]}",{row["Kanal Adı"]}\n{row["URL"]}\n'
-    return content
+    lines = ["#EXTM3U"]
+    for _, row in df.iterrows():
+        lines.append(f'#EXTINF:-1 group-title="{row["Grup"]}",{row["Kanal Adı"]}')
+        lines.append(str(row["URL"]))
+    return "\n".join(lines) + "\n"
 
 def render_live_player(stream_url: str, height: int = 420) -> str:
     """HTML snippet to embed a video player with better error handling."""
@@ -273,7 +278,7 @@ if 'visitor_counter' not in st.session_state:
 if 'session_id' not in st.session_state:
     # UUID kullanarak benzersiz ID oluştur
     st.session_state.session_id = str(uuid.uuid4())
-    # İlk session açılışında sayacı artır
+    # Sayacı sadece yeni sessionlarda bir kez artır
     st.session_state.visitor_counter.increment_visit(st.session_state.session_id)
 
 if 'data' not in st.session_state:
