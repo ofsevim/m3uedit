@@ -548,16 +548,3 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Kanal Logoları (görsel ipuçları)
-if not st.session_state.data.empty:
-    logos = st.session_state.data["LogoURL"].dropna().astype(str).tolist()
-    if logos:
-        st.subheader("Kanal Logoları (örnekler)")
-        # İlk birkaç logoyu gösterecek şekilde basit bir çubuk
-        logo_cols = st.columns(min(6, len(logos)))
-        for i, url in enumerate(logos[:min(6, len(logos))]):
-            with logo_cols[i]:
-                try:
-                    st.image(url, width=100)
-                except Exception:
-                    st.markdown(url)
