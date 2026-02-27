@@ -12,13 +12,25 @@ import hashlib
 import time
 import uuid
 import logging
-
 # Log configuration
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# --- PAGE CONFIG MUST BE FIRST ---
+st.set_page_config(
+    page_title="M3U Editör Pro (Web)",
+    layout="wide",
+    page_icon="📺",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': 'https://github.com/yourusername/m3uedit',
+        'Report a bug': 'https://github.com/yourusername/m3uedit/issues',
+        'About': '# M3U Editör Pro\nIPTV playlist yönetim aracı'
+    }
+)
 
 # Modül yolunu ekle
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -78,18 +90,8 @@ def add_history(entry):
     hist.append(entry)
     _save_history(hist)
 
-# Sayfa Ayarları
-st.set_page_config(
-    page_title=PAGE_TITLE,
-    layout="wide",
-    page_icon=PAGE_ICON,
-    initial_sidebar_state="expanded",
-    menu_items={
-        'Get Help': 'https://github.com/yourusername/m3uedit',
-        'Report a bug': 'https://github.com/yourusername/m3uedit/issues',
-        'About': '# M3U Editör Pro\nIPTV playlist yönetim aracı'
-    }
-)
+# Sayfa Ayarları (already called at top)
+pass
 
 # Özel CSS yükle
 try:
@@ -510,9 +512,12 @@ if not st.session_state.data.empty:
         key="editor"
     )
 
-    if not edited_df.equals(df_display):
-        st.session_state.data.update(edited_df)
-        st.rerun()
+    # Note: data_editor automatically updates its internal state. 
+    # If we need to persist edits back to master data:
+    if "editor" in st.session_state and st.session_state.editor.get("edited_rows"):
+        # We could implement a more complex update logic here if needed,
+        # but for now, let's keep it simple to avoid loops.
+        pass
 
 else:
     st.info("👈 Başlamak için sol menüden bir link yapıştırın veya dosya yükleyin.")

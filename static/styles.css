@@ -5,8 +5,7 @@
 
 /* Tüm Uygulama Tipografisi */
 html,
-body,
-[class*="css"] {
+body {
     font-family: 'Inter', sans-serif !important;
 }
 
