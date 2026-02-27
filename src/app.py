@@ -259,25 +259,6 @@ with st.sidebar:
     st.markdown("---")
     
     mode = st.radio("Yükleme Yöntemi", ["🌐 Linkten Yükle", "📂 Dosya Yükle"])
-    # Basit tema desteği
-    if 'theme' not in st.session_state:
-        st.session_state.theme = 'Açık'
-    theme = st.radio("Tema", ["Açık", "Koyu"], index=0 if st.session_state.theme == 'Açık' else 1)
-    if theme != st.session_state.theme:
-        st.session_state.theme = theme
-        # Basit CSS teması uygulama
-        if theme == 'Koyu':
-            st.markdown("""
-                <style>
-                [data-testid="stAppViewContainer"]{ background: #0b1020; color: #e6e6e6; }
-                </style>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-                <style>
-                [data-testid="stAppViewContainer"]{ background: #ffffff; color: #000000; }
-                </style>
-            """, unsafe_allow_html=True)
 
     # Grup bazlı filtreleme (kenar durumlarda veri olduğunda etkinleşir)
     selected_groups = []
@@ -505,73 +486,66 @@ if not st.session_state.data.empty:
 else:
     st.info("👈 Başlamak için sol menüden bir link yapıştırın veya dosya yükleyin.")
 
-# --- ZİYARETÇİ SAYACI (Sayfa Altı) ---
+# --- FOOTER ---
 st.markdown("---")
-st.markdown("### 📊 Ziyaretçi İstatistikleri")
 
 # İstatistikleri al
 stats = st.session_state.visitor_counter.get_stats()
 
-# Görsel istatistik kartları
-col1, col2, col3, col4 = st.columns(4)
+# İlk ve son ziyaret tarihlerini formatla
+try:
+    from datetime import datetime
+    first_visit = datetime.fromisoformat(stats['first_visit'])
+    first_visit_str = first_visit.strftime("%d.%m.%Y")
+except:
+    first_visit_str = "N/A"
 
-with col1:
-    st.metric(
-        label="🌟 Benzersiz Ziyaretçi",
-        value=f"{stats['unique_visitors']:,}".replace(',', '.'),
-        help="Tarayıcı çerezlerine göre benzersiz ziyaretçi sayısı"
-    )
+try:
+    from datetime import datetime
+    last_visit = datetime.fromisoformat(stats['last_visit'])
+    last_visit_str = last_visit.strftime("%d.%m.%Y")
+except:
+    last_visit_str = "N/A"
 
-with col2:
-    st.metric(
-        label="📊 Toplam Kayıt",
-        value=f"{stats['total_visits']:,}".replace(',', '.'),
-        help="Toplam kayıtlı ziyaret sayısı (benzersiz ziyaretçilere eşittir)"
-    )
-
-with col3:
-    # İlk ziyaret tarihini formatla
-    try:
-        from datetime import datetime
-        first_visit = datetime.fromisoformat(stats['first_visit'])
-        first_visit_str = first_visit.strftime("%d.%m.%Y")
-    except:
-        first_visit_str = "Bilinmiyor"
-    
-    st.metric(
-        label="📅 İlk Ziyaret",
-        value=first_visit_str
-    )
-
-with col4:
-    # Son ziyaret tarihini formatla
-    try:
-        from datetime import datetime
-        last_visit = datetime.fromisoformat(stats['last_visit'])
-        last_visit_str = last_visit.strftime("%d.%m.%Y %H:%M")
-    except:
-        last_visit_str = "Bilinmiyor"
-    
-    st.metric(
-        label="🕒 Son Ziyaret",
-        value=last_visit_str
-    )
-
-# Footer
-st.markdown("---")
+# Footer HTML
 st.markdown(
-    """
-    <div style='text-align: center; color: #888; padding: 20px; margin-top: 20px;'>
-        <p style='margin: 0; font-size: 0.9rem;'>© 2025 M3U Editör Pro | 
-        <a href='https://github.com/yourusername/m3uedit' target='_blank' style='color: #FF4B4B; text-decoration: none;'>GitHub</a> | 
-        <a href='docs/KULLANIM_KILAVUZU.md' target='_blank' style='color: #FF4B4B; text-decoration: none;'>Dokümantasyon</a> | 
-        <a href='LICENSE' target='_blank' style='color: #FF4B4B; text-decoration: none;'>MIT Lisans</a>
-        </p>
-        <p style='margin: 0.5rem 0 0 0; font-size: 0.8rem; color: #666;'>
-        Streamlit {st.__version__} ile geliştirildi
-        </p>
+    f"""
+    <div style='text-align: center; padding: 30px 20px; background: rgba(0,0,0,0.02); border-radius: 10px; margin-top: 40px;'>
+        <div style='margin-bottom: 20px;'>
+            <h3 style='margin: 0 0 15px 0; color: #555; font-size: 1.2rem;'>📊 Ziyaretçi İstatistikleri</h3>
+            <div style='display: flex; justify-content: center; gap: 30px; flex-wrap: wrap;'>
+                <div style='text-align: center;'>
+                    <div style='font-size: 0.8rem; color: #888;'>🌟 Benzersiz Ziyaretçi</div>
+                    <div style='font-size: 1.5rem; font-weight: bold; color: #FF4B4B;'>{stats['unique_visitors']}</div>
+                </div>
+                <div style='text-align: center;'>
+                    <div style='font-size: 0.8rem; color: #888;'>📊 Toplam Kayıt</div>
+                    <div style='font-size: 1.5rem; font-weight: bold; color: #FF4B4B;'>{stats['total_visits']}</div>
+                </div>
+                <div style='text-align: center;'>
+                    <div style='font-size: 0.8rem; color: #888;'>📅 İlk Ziyaret</div>
+                    <div style='font-size: 1.5rem; font-weight: bold; color: #FF4B4B;'>{first_visit_str}</div>
+                </div>
+                <div style='text-align: center;'>
+                    <div style='font-size: 0.8rem; color: #888;'>🕒 Son Ziyaret</div>
+                    <div style='font-size: 1.5rem; font-weight: bold; color: #FF4B4B;'>{last_visit_str}</div>
+                </div>
+            </div>
+        </div>
+        <div style='border-top: 1px solid #ddd; padding-top: 20px; margin-top: 20px;'>
+            <p style='margin: 0; font-size: 0.9rem; color: #666;'>
+                © 2025 M3U Editör Pro | 
+                <a href='https://github.com/yourusername/m3uedit' target='_blank' style='color: #FF4B4B; text-decoration: none;'>GitHub</a> | 
+                <a href='docs/KULLANIM_KILAVUZU.md' target='_blank' style='color: #FF4B4B; text-decoration: none;'>Dokümantasyon</a> | 
+                <a href='LICENSE' target='_blank' style='color: #FF4B4B; text-decoration: none;'>MIT Lisans</a>
+            </p>
+            <p style='margin: 10px 0 0 0; font-size: 0.75rem; color: #999;'>
+                Streamlit {st.__version__} ile geliştirildi
+            </p>
+        </div>
     </div>
     """,
     unsafe_allow_html=True
 )
+
 
