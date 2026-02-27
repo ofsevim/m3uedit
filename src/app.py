@@ -8,15 +8,44 @@ import io
 import json
 import sys
 import os
-
-# Modül yolunu ekle
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from utils.visitor_counter import VisitorCounter
-from utils.config import *
-
 import hashlib
 import time
 import uuid
+
+# Modül yolunu ekle
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
+
+try:
+    from utils.visitor_counter import VisitorCounter
+    from utils.config import *
+except ImportError:
+    # Eğer utils bulunamazsa, basit fallback
+    class VisitorCounter:
+        def __init__(self, *args, **kwargs):
+            pass
+        def increment_visit(self, *args, **kwargs):
+            return 0
+        def get_stats(self):
+            return {'total_visits': 0, 'unique_visitors': 0, 'first_visit': 'N/A', 'last_visit': 'N/A'}
+    
+    # Config fallback
+    PAGE_TITLE = "M3U Editör Pro (Web)"
+    PAGE_ICON = "📺"
+    REQUEST_TIMEOUT = 30
+    DISABLE_SSL_VERIFY = True
+    USER_AGENT = "Mozilla/5.0"
+    TR_KEYWORDS = ["TR", "TURK", "TÜRK", "TURKIYE", "TÜRKİYE", "YERLI", "ULUSAL", "ISTANBUL"]
+    DEFAULT_TR_FILTER = True
+    TABLE_HEIGHT = 600
+    MAX_ROWS_PER_PAGE = 0
+    DEFAULT_EXPORT_FILENAME = "iptv_listesi"
+    EXPORT_FILE_EXTENSION = ".m3u"
+    DEBUG_MODE = False
+    CACHE_TTL = 300
+    MAX_FILE_SIZE_MB = 50
+
 
 # Simple persistence for user history (last loads/exports)
 HISTORY_FILE = "history.json"
