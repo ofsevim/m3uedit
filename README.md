@@ -108,17 +108,6 @@ streamlit run src/app.py
 
 </details>
 
-## 🐳 Docker ile Kullanım
-
-```bash
-# Docker Compose ile
-docker-compose up -d
-
-# Veya Docker ile
-docker build -t m3uedit .
-docker run -p 8501:8501 m3uedit
-```
-
 ## 📖 Kullanım Kılavuzu
 
 ### 1️⃣ M3U Listesi Yükleme
@@ -170,9 +159,7 @@ m3uedit/
 │   ├── KULLANIM_KILAVUZU.md
 │   └── DEPLOYMENT.md
 ├── src/                    # Kaynak kodlar
-│   ├── app.py             # Ana uygulama
-│   ├── app_backup.py
-│   └── app_complex.py
+│   └── app.py             # Ana uygulama
 ├── static/                 # Statik dosyalar
 │   └── styles.css
 ├── tests/                  # Test dosyaları
@@ -180,13 +167,10 @@ m3uedit/
 ├── utils/                  # Yardımcı modüller
 │   ├── config.py          # Yapılandırma
 │   └── visitor_counter.py # Ziyaretçi sayacı
-├── .dockerignore
 ├── .gitattributes
 ├── .gitignore
 ├── CHANGELOG.md           # Değişiklik günlüğü
 ├── CONTRIBUTING.md        # Katkı rehberi
-├── Dockerfile
-├── docker-compose.yml
 ├── LICENSE                # MIT Lisans
 ├── README.md              # Bu dosya
 └── requirements.txt       # Python bağımlılıkları
@@ -198,7 +182,6 @@ m3uedit/
 - **Pandas** - Veri işleme
 - **Python urllib** - HTTP istekleri
 - **Re** - Regex işlemleri
-- **Docker** - Containerization
 
 ## 📚 Dokümantasyon
 

@@ -3,7 +3,8 @@ title: M3U Editor Pro
 emoji: 📺
 colorFrom: blue
 colorTo: purple
-sdk: docker
+sdk: streamlit
+streamlit_file: src/app.py
 pinned: false
 ---
 

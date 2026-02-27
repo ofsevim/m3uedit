@@ -23,43 +23,6 @@ pip install -r requirements.txt
 streamlit run src/app.py
 ```
 
-## Docker ile Deployment
-
-### Dockerfile Oluşturma
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-EXPOSE 8501
-
-CMD ["streamlit", "run", "src/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
-```
-
-### Docker Compose
-```yaml
-version: '3.8'
-services:
-  m3uedit:
-    build: .
-    ports:
-      - "8501:8501"
-    volumes:
-      - ./visitor_data.json:/app/visitor_data.json
-    environment:
-      - APP_ENV=production
-```
-
-### Çalıştırma
-```bash
-docker-compose up -d
-```
-
 ## Streamlit Cloud
 
 1. GitHub'a push edin

@@ -44,21 +44,3 @@ jobs:
         python -m py_compile utils/config.py
         python -m py_compile utils/visitor_counter.py
 
-  docker:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Build Docker image
-      run: docker build -t m3uedit:latest .
-    
-    - name: Test Docker image
-      run: |
-        docker run -d -p 8501:8501 --name test-container m3uedit:latest
-        sleep 15
-        docker logs test-container
-        docker stop test-container || true
-        docker rm test-container || true
-

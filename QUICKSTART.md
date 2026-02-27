@@ -81,16 +81,6 @@ pip install -r requirements.txt
 streamlit run src/app.py --server.port=8502
 ```
 
-## Docker ile Kullanım
-
-Daha kolay yol:
-
-```bash
-docker-compose up
-```
-
-Tarayıcıda: http://localhost:8501
-
 ## Yardım
 
 - 📖 [Detaylı Kullanım Kılavuzu](docs/KULLANIM_KILAVUZU.md)
