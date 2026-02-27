@@ -140,20 +140,67 @@ def convert_df_to_m3u(df):
     return content
 
 def render_live_player(stream_url: str, height: int = 420) -> str:
-    """HTML snippet to embed a video player."""
+    """HTML snippet to embed a video player with better error handling."""
     url = stream_url if stream_url else ""
     h = str(height) if height else "420"
     
-    html = "<div style='width:100%; height:" + h + "px; background:#000;'>"
-    html += "<video id='m3u_player' controls playsinline style='width:100%; height:100%;'></video>"
-    html += "<script src='https://cdn.jsdelivr.net/npm/hls.js@latest'></script>"
-    html += "<script>"
-    html += "var video = document.getElementById('m3u_player');"
-    html += "var url = '" + url + "';"
-    html += "if (Hls.isSupported()) { var hls = new Hls(); hls.loadSource(url); hls.attachMedia(video); }"
-    html += "else if (video.canPlayType('application/vnd.apple.mpegurl')) { video.src = url; }"
-    html += "</script>"
-    html += "</div>"
+    html = f"""
+    <div style='width:100%; height:{h}px; background:#000; border-radius:8px; overflow:hidden;'>
+        <video id='m3u_player' controls autoplay playsinline style='width:100%; height:100%;'></video>
+        <div id='error_msg' style='display:none; color:#fff; padding:20px; text-align:center;'>
+            <p>⚠️ Video yüklenemedi. URL geçerli olmayabilir veya CORS hatası olabilir.</p>
+        </div>
+    </div>
+    <script src='https://cdn.jsdelivr.net/npm/hls.js@latest'></script>
+    <script>
+        var video = document.getElementById('m3u_player');
+        var errorDiv = document.getElementById('error_msg');
+        var url = '{url}';
+        
+        if (!url) {{
+            errorDiv.style.display = 'block';
+            video.style.display = 'none';
+        }} else if (Hls.isSupported()) {{
+            var hls = new Hls({{
+                enableWorker: true,
+                lowLatencyMode: true,
+                backBufferLength: 90
+            }});
+            
+            hls.loadSource(url);
+            hls.attachMedia(video);
+            
+            hls.on(Hls.Events.MANIFEST_PARSED, function() {{
+                video.play().catch(function(e) {{
+                    console.log('Autoplay engellendi:', e);
+                }});
+            }});
+            
+            hls.on(Hls.Events.ERROR, function(event, data) {{
+                if (data.fatal) {{
+                    console.error('HLS Hatası:', data);
+                    errorDiv.style.display = 'block';
+                    video.style.display = 'none';
+                }}
+            }});
+        }} else if (video.canPlayType('application/vnd.apple.mpegurl')) {{
+            video.src = url;
+            video.addEventListener('loadedmetadata', function() {{
+                video.play().catch(function(e) {{
+                    console.log('Autoplay engellendi:', e);
+                }});
+            }});
+            video.addEventListener('error', function() {{
+                errorDiv.style.display = 'block';
+                video.style.display = 'none';
+            }});
+        }} else {{
+            errorDiv.innerHTML = '<p>⚠️ Tarayıcınız HLS formatını desteklemiyor.</p>';
+            errorDiv.style.display = 'block';
+            video.style.display = 'none';
+        }}
+    </script>
+    """
     return html
 
 # --- ARAYÜZ (UI) ---
@@ -290,26 +337,6 @@ with st.sidebar:
             new_data.insert(3, "Durum", "")
         st.session_state.data = new_data
 
-    # Bulk actions for channel list
-    if not st.session_state.data.empty:
-        cols_actions = st.columns([1,1,1])
-        if cols_actions[0].button("Tümünü Seç"):
-            st.session_state.data["Seç"] = True
-            st.experimental_rerun()
-        if cols_actions[1].button("Seçiliyi Kaldır"):
-            st.session_state.data["Seç"] = False
-            st.experimental_rerun()
-        if cols_actions[2].button("Çiftleri Temizle"):
-            # Basit duplicate temizleme: URL + Kanal Adı + Grup kombinasyonunu kontrol eder
-            before = len(st.session_state.data)
-            st.session_state.data = st.session_state.data.drop_duplicates(subset=["Grup","Kanal Adı","URL"], keep='first')
-            after = len(st.session_state.data)
-            st.experimental_rerun()
-        # Seçili kanalları sil
-        if st.button("Seçili kanalları Sil"):
-            st.session_state.data = st.session_state.data[~st.session_state.data["Seç"]]
-            st.experimental_rerun()
-
     st.markdown("---")
     
     if not st.session_state.data.empty:
@@ -355,38 +382,9 @@ with st.sidebar:
                     df.loc[:, "Durum"] = statuses
                     st.session_state.data = df
                     st.success("Durumlar güncellendi.")
-        # JSON Export (seçilmişler veya tüm liste)
-        json_output = download_df.to_json(orient="records", force_ascii=False)
-        st.download_button(
-            label=f"💾 JSON ({count_selected} öğe)",
-            data=json_output,
-            file_name=f"iptv_listesi{file_name_suffix}.json",
-            mime="application/json",
-            use_container_width=True
-        )
-        # CSV Export
-        csv_output = download_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label=f"💾 CSV ({count_selected} öğe)",
-            data=csv_output,
-            file_name=f"iptv_listesi{file_name_suffix}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-        # History kaydı
-        add_history({"type": "export", "count": int(len(download_df)), "format": "json/csv", "time": time.time()})
 
 # Ana Ekran
 st.subheader("Kanal Listesi Düzenleyici")
-
-# Canlı Oynatıcı (Test Et)
-st.subheader("Canlı Oynatıcı (Test Et)")
-live_stream_url = st.text_input("Oynatılacak URL:", value="")
-if st.button("Oynat", key="play_live_btn"):
-    if live_stream_url and live_stream_url.strip() != "":
-        st.markdown("Canlı oynatıcı:")
-        # height ayarıyla player alanını büyütüp görebiliriz
-        components.html(render_live_player(live_stream_url.strip(), height=420), height=520)
 
 if not st.session_state.data.empty:
     col1, col2, col3 = st.columns(3)
@@ -411,11 +409,52 @@ if not st.session_state.data.empty:
             df_display["Kanal Adı"].str.contains(search_term, case=False)
         ]
 
-    st.caption("İstediğiniz kanalların başındaki kutucuğu işaretleyin veya ▶ butonuna basarak oynatın.")
-
     # Oynatılacak kanal için session state
     if 'play_channel' not in st.session_state:
         st.session_state.play_channel = None
+
+    # Kanal oynatma butonu için form (YUKARIDA)
+    st.markdown("### 🎬 Canlı Oynatıcı")
+    col_play1, col_play2 = st.columns([3, 1])
+    with col_play1:
+        play_channel_name = st.selectbox("Oynatılacak Kanal", 
+            options=df_display["Kanal Adı"].tolist() if not df_display.empty else [],
+            index=None, placeholder="Kanal seçin...", key="play_select")
+    with col_play2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("▶ OYNAT", use_container_width=True, key="play_btn"):
+            if play_channel_name:
+                selected_row = df_display[df_display["Kanal Adı"] == play_channel_name]
+                if not selected_row.empty:
+                    st.session_state.play_channel = {
+                        "name": play_channel_name,
+                        "url": selected_row.iloc[0]["URL"],
+                        "logo": selected_row.iloc[0].get("LogoURL", "")
+                    }
+                    st.rerun()
+
+    # Player bölümü
+    if st.session_state.play_channel:
+        pc = st.session_state.play_channel
+        st.markdown(f"**▶ Oynatılıyor:** {pc['name']}")
+        
+        # Logo varsa göster
+        if pc.get("logo"):
+            try:
+                st.image(pc["logo"], width=100)
+            except:
+                pass
+        
+        # Player
+        components.html(render_live_player(pc["url"], height=400), height=500)
+        
+        if st.button("⏹ Oynatmayı Durdur", use_container_width=True):
+            st.session_state.play_channel = None
+            st.rerun()
+        
+        st.markdown("---")
+
+    st.caption("İstediğiniz kanalların başındaki kutucuğu işaretleyin.")
 
     # Mevcut kolonları kontrol et
     available_columns = list(df_display.columns) if not df_display.empty else []
@@ -429,47 +468,6 @@ if not st.session_state.data.empty:
         height=600,
         key="editor"
     )
-
-    # Kanal oynatma butonu için form
-    with st.form("play_form"):
-        col_play1, col_play2 = st.columns([3, 1])
-        with col_play1:
-            play_channel_name = st.selectbox("Oynatılacak Kanal", 
-                options=df_display["Kanal Adı"].tolist() if not df_display.empty else [],
-                index=None, placeholder="Kanal seçin...")
-        with col_play2:
-            st.markdown("<br>", unsafe_allow_html=True)
-            play_submit = st.form_submit_button("▶ OYNAT", use_container_width=True)
-        
-        if play_submit and play_channel_name:
-            selected_row = df_display[df_display["Kanal Adı"] == play_channel_name]
-            if not selected_row.empty:
-                st.session_state.play_channel = {
-                    "name": play_channel_name,
-                    "url": selected_row.iloc[0]["URL"],
-                    "logo": selected_row.iloc[0].get("LogoURL", "")
-                }
-
-    # Player bölümü
-    if st.session_state.play_channel:
-        st.markdown("---")
-        pc = st.session_state.play_channel
-        st.subheader("▶ " + pc["name"])
-        
-        # Logo varsa göster
-        if pc.get("logo"):
-            try:
-                st.image(pc["logo"], width=150)
-            except:
-                pass
-        
-        # Player
-        st.markdown("**Yayın:** " + pc["url"])
-        components.html(render_live_player(pc["url"], height=450), height=550)
-        
-        if st.button("⏹ Oynatmayı Durdur"):
-            st.session_state.play_channel = None
-            st.rerun()
 
     if not edited_df.equals(df_display):
         st.session_state.data.update(edited_df)

@@ -124,5 +124,11 @@
     "count": 307,
     "format": "json/csv",
     "time": 1772191586.3792956
+  },
+  {
+    "type": "export",
+    "count": 307,
+    "format": "json/csv",
+    "time": 1772191664.5293941
   }
 ]
