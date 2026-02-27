@@ -1,14 +1,17 @@
 """
-M3U Editör Pro - Ana Dosya
-Streamlit Cloud için kök dizinde app.py gerekli
+M3U Editör Pro - Giriş Noktası
+Streamlit Cloud için kök dizinde app.py gerekli.
+Çalıştırma: streamlit run app.py
 """
-
-# src/app.py dosyasını import et ve çalıştır
+import importlib
 import sys
 import os
 
 # src dizinini path'e ekle
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
 
-# Ana uygulamayı import et
-from app import *
+# src/app.py'yi modül olarak yükle ve çalıştır
+# Not: import * kullanmıyoruz çünkü set_page_config çakışmasına neden olur
+importlib.import_module("app")

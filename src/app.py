@@ -79,9 +79,27 @@ except ImportError:
 # YARDIMCI FONKSİYONLAR
 # =====================================================================
 
-HISTORY_FILE = os.path.join(parent_dir, "history.json")
-FAVORITES_FILE = os.path.join(parent_dir, "favorites.json")
-BOOKMARKS_FILE = os.path.join(parent_dir, "bookmarks.json")
+# Streamlit Cloud read-only filesystem güvenliği: yazılabilir dizin tespit et
+def _get_writable_dir() -> str:
+    """Yazılabilir bir dizin döndürür (Cloud uyumlu)."""
+    # Önce /tmp dene (Linux/Cloud), sonra parent_dir
+    for d in ["/tmp", os.environ.get("TMPDIR", ""), parent_dir]:
+        if d and os.path.isdir(d):
+            try:
+                test_file = os.path.join(d, ".write_test")
+                with open(test_file, "w") as f:
+                    f.write("test")
+                os.remove(test_file)
+                return d
+            except OSError:
+                continue
+    return parent_dir
+
+
+_WRITABLE_DIR = _get_writable_dir()
+HISTORY_FILE = os.path.join(_WRITABLE_DIR, "history.json")
+FAVORITES_FILE = os.path.join(_WRITABLE_DIR, "favorites.json")
+BOOKMARKS_FILE = os.path.join(_WRITABLE_DIR, "bookmarks.json")
 
 TR_PATTERN = re.compile(
     r"(\b|_|\[|\(|\|)(TR|TURK|TÜRK|TURKIYE|TÜRKİYE|YERLI|ULUSAL|ISTANBUL)(\b|_|\]|\)|\||:)",
@@ -100,7 +118,14 @@ def _safe_contains(series: pd.Series, term: str) -> pd.Series:
     return series.astype(str).str.contains(term, case=False, na=False)
 
 
-# --- GEÇMİŞ ---
+def _get_selected_mask(df: pd.DataFrame) -> pd.Series:
+    """DataFrame'den 'Seç' kolonunu güvenli şekilde boolean mask olarak döndürür."""
+    if "Seç" in df.columns:
+        return df["Seç"].fillna(False).astype(bool)
+    return pd.Series(False, index=df.index)
+
+
+# --- JSON DOSYA İŞLEMLERİ (yazma hataları sessizce yutulur) ---
 def _load_json_file(filepath: str) -> list:
     try:
         with open(filepath, "r", encoding="utf-8") as f:
@@ -113,21 +138,20 @@ def _save_json_file(filepath: str, data):
     try:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-    except OSError as e:
-        logger.error(f"Dosya kaydedilemedi ({filepath}): {e}")
+    except OSError:
+        # Streamlit Cloud'da yazma izni olmayabilir — sessizce geç
+        pass
 
 
 def add_history(entry: dict):
     hist = _load_json_file(HISTORY_FILE)
     entry["timestamp"] = datetime.now().isoformat()
     hist.append(entry)
-    # Son 100 kayıt tut
     if len(hist) > 100:
         hist = hist[-100:]
     _save_json_file(HISTORY_FILE, hist)
 
 
-# --- FAVORİLER ---
 def load_favorites() -> list:
     return _load_json_file(FAVORITES_FILE)
 
@@ -153,7 +177,6 @@ def remove_favorite(channel_name: str, url: str):
     save_favorites(favs)
 
 
-# --- YER İMLERİ (URL Bookmarks) ---
 def load_bookmarks() -> list:
     return _load_json_file(BOOKMARKS_FILE)
 
@@ -163,12 +186,22 @@ def save_bookmarks(bm: list):
 
 
 # --- CSS ---
-css_path = os.path.join(parent_dir, "static", "styles.css")
-try:
-    with open(css_path, encoding="utf-8") as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-except OSError:
-    pass
+def _load_css():
+    """CSS dosyasını yükle — birden fazla olası yolu dene."""
+    candidates = [
+        os.path.join(parent_dir, "static", "styles.css"),
+        os.path.join(current_dir, "..", "static", "styles.css"),
+        os.path.join(os.getcwd(), "static", "styles.css"),
+    ]
+    for path in candidates:
+        try:
+            with open(path, encoding="utf-8") as f:
+                st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+                return
+        except OSError:
+            continue
+
+_load_css()
 
 
 # =====================================================================
@@ -199,22 +232,18 @@ def parse_m3u_lines(iterator: Iterable) -> List[Dict]:
             if logo_match:
                 info["LogoURL"] = logo_match.group(1)
 
-            # tvg-id (EPG eşleştirme)
             tvg_id = re.search(r'tvg-id="([^"]*)"', line)
             if tvg_id:
                 info["TVG-ID"] = tvg_id.group(1)
 
-            # tvg-name
             tvg_name = re.search(r'tvg-name="([^"]*)"', line)
             if tvg_name:
                 info["TVG-Name"] = tvg_name.group(1)
 
-            # tvg-language
             tvg_lang = re.search(r'tvg-language="([^"]*)"', line)
             if tvg_lang:
                 info["Dil"] = tvg_lang.group(1)
 
-            # tvg-country
             tvg_country = re.search(r'tvg-country="([^"]*)"', line)
             if tvg_country:
                 info["Ülke"] = tvg_country.group(1)
@@ -232,7 +261,6 @@ def parse_m3u_lines(iterator: Iterable) -> List[Dict]:
         elif not line.startswith("#"):
             if current_info:
                 current_info["URL"] = line
-                # URL tipini tespit et
                 lower_url = line.lower()
                 if ".m3u8" in lower_url or "/live/" in lower_url:
                     current_info["Tür"] = "HLS"
@@ -250,7 +278,6 @@ def parse_m3u_lines(iterator: Iterable) -> List[Dict]:
 
 def filter_channels(channels: List[Dict], only_tr: bool = False,
                     keyword: str = "", group_filter: str = "") -> List[Dict]:
-    """Kanal listesini çeşitli filtrelere göre filtreler."""
     result = channels
     if only_tr:
         result = [ch for ch in result if TR_PATTERN.search(ch.get("Grup", ""))]
@@ -264,7 +291,6 @@ def filter_channels(channels: List[Dict], only_tr: bool = False,
 
 
 def convert_df_to_m3u(df: pd.DataFrame) -> str:
-    """DataFrame'i M3U formatına dönüştürür."""
     lines = ["#EXTM3U"]
     for _, row in df.iterrows():
         logo = row.get("LogoURL", "")
@@ -281,51 +307,40 @@ def convert_df_to_m3u(df: pd.DataFrame) -> str:
 
 
 def convert_df_to_csv(df: pd.DataFrame) -> str:
-    """DataFrame'i CSV formatına dönüştürür."""
     export_cols = [c for c in ["Grup", "Kanal Adı", "URL", "LogoURL", "Dil", "Ülke", "Tür"] if c in df.columns]
     return df[export_cols].to_csv(index=False)
 
 
 def convert_df_to_json(df: pd.DataFrame) -> str:
-    """DataFrame'i JSON formatına dönüştürür."""
     export_cols = [c for c in ["Grup", "Kanal Adı", "URL", "LogoURL", "Dil", "Ülke", "Tür"] if c in df.columns]
     return df[export_cols].to_json(orient="records", force_ascii=False, indent=2)
 
 
 def merge_playlists(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
-    """İki playlist'i birleştirir, çiftleri kaldırır."""
     merged = pd.concat([df1, df2], ignore_index=True)
     merged = merged.drop_duplicates(subset=["Kanal Adı", "URL"], keep="first")
     return merged.reset_index(drop=True)
 
 
 def get_playlist_stats(df: pd.DataFrame) -> dict:
-    """Playlist hakkında detaylı istatistik döndürür."""
     stats = {
         "total": len(df),
         "groups": df["Grup"].nunique() if "Grup" in df.columns else 0,
-        "duplicates": df.duplicated(subset=["Kanal Adı", "URL"]).sum() if not df.empty else 0,
-        "empty_urls": (df["URL"].astype(str).str.strip() == "").sum() if "URL" in df.columns else 0,
-        "hls_count": 0,
-        "dash_count": 0,
-        "group_distribution": {},
-        "type_distribution": {},
+        "duplicates": int(df.duplicated(subset=["Kanal Adı", "URL"]).sum()) if not df.empty else 0,
+        "empty_urls": int((df["URL"].astype(str).str.strip() == "").sum()) if "URL" in df.columns else 0,
+        "hls_count": 0, "dash_count": 0,
+        "group_distribution": {}, "type_distribution": {},
     }
     if "Tür" in df.columns:
-        stats["hls_count"] = (df["Tür"] == "HLS").sum()
-        stats["dash_count"] = (df["Tür"] == "DASH").sum()
+        stats["hls_count"] = int((df["Tür"] == "HLS").sum())
+        stats["dash_count"] = int((df["Tür"] == "DASH").sum())
         stats["type_distribution"] = df["Tür"].value_counts().to_dict()
     if "Grup" in df.columns:
         stats["group_distribution"] = df["Grup"].value_counts().head(20).to_dict()
     return stats
 
 
-# =====================================================================
-# URL SAĞLIK KONTROLÜ (Paralel)
-# =====================================================================
-
 def check_single_url(url_str: str, timeout: int = 5) -> str:
-    """Tek bir URL'nin durumunu kontrol eder."""
     if not url_str or url_str.strip() == "":
         return "Boş URL"
     try:
@@ -341,10 +356,9 @@ def check_single_url(url_str: str, timeout: int = 5) -> str:
 
 
 def check_urls_parallel(urls: List[str], max_workers: int = 10, timeout: int = 5) -> List[str]:
-    """URL'leri paralel olarak kontrol eder."""
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(check_single_url, u, timeout): i for i, u in enumerate(urls)}
-        results = ["⏳ Bekliyor"] * len(urls)
+        results = ["⏳"] * len(urls)
         for future in concurrent.futures.as_completed(futures):
             idx = futures[future]
             try:
@@ -359,7 +373,6 @@ def check_urls_parallel(urls: List[str], max_workers: int = 10, timeout: int = 5
 # =====================================================================
 
 def render_live_player(stream_url: str, height: int = 420) -> str:
-    """HLS/DASH video oynatıcı HTML snippet'i."""
     url = (stream_url or "").replace("'", "\\'").replace('"', '\\"')
     h = str(height)
     return f"""
@@ -381,27 +394,17 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
         var errorDiv = document.getElementById('error_msg');
         var loadDiv = document.getElementById('loading_indicator');
         var url = '{url}';
-
-        function showError() {{ errorDiv.style.display='block'; video.style.display='none'; loadDiv.style.display='none'; }}
-        function hideLoading() {{ loadDiv.style.display='none'; }}
-
+        function showError(){{ errorDiv.style.display='block'; video.style.display='none'; loadDiv.style.display='none'; }}
+        function hideLoading(){{ loadDiv.style.display='none'; }}
         if (!url) {{ showError(); return; }}
-
         if (Hls.isSupported()) {{
-            var hls = new Hls({{enableWorker:true,lowLatencyMode:true,backBufferLength:90,
-                               maxBufferLength:30,maxMaxBufferLength:60}});
-            hls.loadSource(url);
-            hls.attachMedia(video);
-            hls.on(Hls.Events.MANIFEST_PARSED, function(){{
-                hideLoading();
-                video.play().catch(function(){{}});
-            }});
+            var hls = new Hls({{enableWorker:true,lowLatencyMode:true,backBufferLength:90}});
+            hls.loadSource(url); hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, function(){{ hideLoading(); video.play().catch(function(){{}}); }});
             hls.on(Hls.Events.ERROR, function(event,data){{
                 if(data.fatal){{
-                    if(data.type === Hls.ErrorTypes.NETWORK_ERROR){{
-                        console.log('Ağ hatası, yeniden deneniyor...');
-                        hls.startLoad();
-                    }} else {{ showError(); }}
+                    if(data.type===Hls.ErrorTypes.NETWORK_ERROR){{ hls.startLoad(); }}
+                    else {{ showError(); }}
                 }}
             }});
         }} else if (video.canPlayType('application/vnd.apple.mpegurl')) {{
@@ -409,8 +412,6 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
             video.addEventListener('loadedmetadata', function(){{ hideLoading(); video.play().catch(function(){{}}); }});
             video.addEventListener('error', function(){{ showError(); }});
         }} else {{ showError(); }}
-
-        // 10 saniye sonra hala yükleniyorsa loading'i kaldır
         setTimeout(hideLoading, 10000);
     }})();
     </script>
@@ -418,7 +419,7 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
 
 
 # =====================================================================
-# ARAYÜZ (UI) - SESSION STATE
+# SESSION STATE
 # =====================================================================
 
 if "visitor_counter" not in st.session_state:
@@ -434,18 +435,11 @@ if "data" not in st.session_state:
 if "play_channel" not in st.session_state:
     st.session_state.play_channel = None
 
-if "active_tab" not in st.session_state:
-    st.session_state.active_tab = "editor"
-
 if "undo_stack" not in st.session_state:
     st.session_state.undo_stack = []
 
-if "comparison_data" not in st.session_state:
-    st.session_state.comparison_data = None
-
 
 def push_undo():
-    """Mevcut durumu undo stack'e ekle."""
     if not st.session_state.data.empty:
         st.session_state.undo_stack.append(st.session_state.data.copy())
         if len(st.session_state.undo_stack) > 20:
@@ -453,7 +447,6 @@ def push_undo():
 
 
 def pop_undo():
-    """Son durumu geri yükle."""
     if st.session_state.undo_stack:
         st.session_state.data = st.session_state.undo_stack.pop()
         return True
@@ -461,7 +454,6 @@ def pop_undo():
 
 
 def _prepare_new_data(raw_channels: List[Dict]) -> pd.DataFrame:
-    """Parse edilen kanalları DataFrame'e dönüştürür ve gerekli kolonları ekler."""
     new_data = pd.DataFrame(raw_channels)
     if new_data.empty:
         return new_data
@@ -469,7 +461,6 @@ def _prepare_new_data(raw_channels: List[Dict]) -> pd.DataFrame:
                          ("Durum", ""), ("Tür", ""), ("Dil", ""), ("Ülke", "")]:
         if col not in new_data.columns:
             new_data[col] = default
-    # Kolon sıralaması
     priority = ["Seç", "Favori", "Grup", "Kanal Adı", "URL", "Tür", "Dil", "Ülke", "LogoURL", "Durum"]
     ordered = [c for c in priority if c in new_data.columns]
     remaining = [c for c in new_data.columns if c not in ordered]
@@ -483,20 +474,17 @@ def _prepare_new_data(raw_channels: List[Dict]) -> pd.DataFrame:
 
 with st.sidebar:
     st.markdown(
-        """
-        <div style='text-align:center;padding:1rem 0;'>
-            <h1 style='margin:0;font-size:2.5rem;'>📺</h1>
-            <h2 style='margin:0.5rem 0 0 0;font-size:1.4rem;'>M3U Editör Pro</h2>
-            <p style='margin:0.25rem 0 0 0;color:#888;font-size:0.85rem;'>v2.0 — IPTV Yönetim Aracı</p>
-        </div>
-        """,
+        "<div style='text-align:center;padding:1rem 0;'>"
+        "<h1 style='margin:0;font-size:2.5rem;'>📺</h1>"
+        "<h2 style='margin:0.5rem 0 0 0;font-size:1.4rem;'>M3U Editör Pro</h2>"
+        "<p style='margin:0.25rem 0 0 0;color:#888;font-size:0.85rem;'>v2.0 — IPTV Yönetim Aracı</p>"
+        "</div>",
         unsafe_allow_html=True,
     )
     st.markdown("---")
 
     mode = st.radio("📥 Yükleme Yöntemi", ["🌐 Linkten Yükle", "📂 Dosya Yükle", "📋 Yapıştır (Metin)"])
 
-    # --- Sıralama & Filtreleme ---
     selected_groups = []
     if not st.session_state.data.empty:
         st.markdown("#### ⚙️ Sıralama & Filtre")
@@ -518,11 +506,9 @@ with st.sidebar:
         if group_options:
             selected_groups = st.multiselect("Grupları filtrele", group_options, default=group_options)
 
-    # --- Yükleme ---
     new_data = None
 
     if mode == "🌐 Linkten Yükle":
-        # Yer imleri
         bookmarks = load_bookmarks()
         if bookmarks:
             bm_names = ["— Yer İmi Seç —"] + [b.get("name", b.get("url", "")) for b in bookmarks]
@@ -536,8 +522,7 @@ with st.sidebar:
         col_tr, col_bm = st.columns(2)
         only_tr = col_tr.checkbox("🇹🇷 TR Filtresi", value=DEFAULT_TR_FILTER)
 
-        # Yer imi kaydet
-        if col_bm.button("📌 Kaydet", help="Bu URL'yi yer imlerine ekle"):
+        if col_bm.button("📌 Kaydet", help="URL'yi yer imlerine ekle"):
             if url:
                 bms = load_bookmarks()
                 if not any(b.get("url") == url for b in bms):
@@ -546,7 +531,7 @@ with st.sidebar:
                     st.success("Yer imi kaydedildi.")
                     st.rerun()
                 else:
-                    st.info("Bu URL zaten yer imlerinde.")
+                    st.info("Zaten yer imlerinde.")
 
         if st.button("🚀 Listeyi Çek ve Tara", use_container_width=True, type="primary"):
             if url:
@@ -566,16 +551,13 @@ with st.sidebar:
                                 new_data.duplicated(subset=["Kanal Adı", "URL"]).sum()
                                 if not new_data.empty else 0
                             )
-
                             if not final_channels:
                                 st.warning("⚠️ Kanal bulunamadı veya format hatalı.")
                             else:
                                 st.success(f"✅ {len(final_channels)} kanal bulundu ({elapsed}s)")
-                                add_history({"type": "load", "count": len(final_channels),
-                                             "url": url, "time": time.time()})
+                                add_history({"type": "load", "count": len(final_channels), "url": url})
                             if duplicates:
-                                st.info(f"🔄 {int(duplicates)} tekrarlı kanal tespit edildi.")
-
+                                st.info(f"🔄 {int(duplicates)} tekrarlı kanal.")
                 except urllib.error.HTTPError as e:
                     st.error(f"🚫 HTTP Hatası: {e.code} - {e.reason}")
                 except urllib.error.URLError as e:
@@ -589,9 +571,7 @@ with st.sidebar:
                 st.warning("Lütfen bir link girin.")
 
     elif mode == "📂 Dosya Yükle":
-        uploaded_files = st.file_uploader(
-            "M3U Dosyası Seç", type=["m3u", "m3u8"], accept_multiple_files=True
-        )
+        uploaded_files = st.file_uploader("M3U Dosyası Seç", type=["m3u", "m3u8"], accept_multiple_files=True)
         if uploaded_files:
             all_channels = []
             for uf in uploaded_files:
@@ -601,7 +581,8 @@ with st.sidebar:
             st.success(f"📂 {len(uploaded_files)} dosyadan {len(all_channels)} kanal yüklendi.")
 
     elif mode == "📋 Yapıştır (Metin)":
-        pasted = st.text_area("M3U içeriğini yapıştırın:", height=200, placeholder="#EXTM3U\n#EXTINF:-1,Kanal\nhttp://...")
+        pasted = st.text_area("M3U içeriğini yapıştırın:", height=200,
+                              placeholder="#EXTM3U\n#EXTINF:-1,Kanal\nhttp://...")
         if st.button("📋 Yapıştırılanı Yükle", use_container_width=True):
             if pasted.strip():
                 raw_channels = parse_m3u_lines(pasted.strip().splitlines())
@@ -640,32 +621,29 @@ with st.sidebar:
             st.rerun()
         if bc4.button("↩️ Geri Al", use_container_width=True):
             if pop_undo():
-                st.success("Son işlem geri alındı.")
+                st.success("Geri alındı.")
                 st.rerun()
             else:
                 st.info("Geri alınacak işlem yok.")
 
         if st.button("🗑️ Seçilenleri Sil", use_container_width=True):
-            selected = st.session_state.data[st.session_state.data.get("Seç", False) == True]
-            if len(selected) > 0:
+            mask = _get_selected_mask(st.session_state.data)
+            count = mask.sum()
+            if count > 0:
                 push_undo()
-                st.session_state.data = st.session_state.data[
-                    st.session_state.data["Seç"] != True
-                ].reset_index(drop=True)
-                st.success(f"{len(selected)} kanal silindi.")
+                st.session_state.data = st.session_state.data[~mask].reset_index(drop=True)
+                st.success(f"{count} kanal silindi.")
                 st.rerun()
             else:
                 st.info("Silinecek seçili kanal yok.")
 
-        # Boş URL'leri temizle
         if st.button("🧹 Boş URL'leri Temizle", use_container_width=True):
             push_undo()
             before = len(st.session_state.data)
             st.session_state.data = st.session_state.data[
                 st.session_state.data["URL"].astype(str).str.strip() != ""
             ].reset_index(drop=True)
-            after = len(st.session_state.data)
-            st.success(f"{before - after} boş URL'li kanal silindi.")
+            st.success(f"{before - len(st.session_state.data)} boş URL silindi.")
             st.rerun()
 
     st.markdown("---")
@@ -673,48 +651,34 @@ with st.sidebar:
     # --- EXPORT ---
     if not st.session_state.data.empty:
         st.markdown("#### 💾 Dışa Aktar")
-        selected_rows = st.session_state.data[st.session_state.data.get("Seç", False) == True]
-        count_selected = len(selected_rows)
+        sel_mask = _get_selected_mask(st.session_state.data)
+        count_selected = int(sel_mask.sum())
 
         if count_selected > 0:
             st.success(f"✅ {count_selected} kanal seçildi.")
-            download_df = selected_rows
+            download_df = st.session_state.data[sel_mask]
             suffix = "_secilenler"
         else:
             st.info("ℹ️ Seçim yok → tüm liste")
             download_df = st.session_state.data
             suffix = "_tum_liste"
 
-        # M3U
         m3u_output = convert_df_to_m3u(download_df)
         st.download_button(
-            label=f"📥 M3U İndir ({len(download_df)})",
-            data=m3u_output,
+            label=f"📥 M3U ({len(download_df)})", data=m3u_output,
             file_name=f"{DEFAULT_EXPORT_FILENAME}{suffix}{EXPORT_FILE_EXTENSION}",
-            mime="text/plain",
-            type="primary",
-            use_container_width=True,
+            mime="text/plain", type="primary", use_container_width=True,
         )
-        # JSON
-        json_output = convert_df_to_json(download_df)
         st.download_button(
-            label=f"📥 JSON İndir ({len(download_df)})",
-            data=json_output,
+            label=f"📥 JSON ({len(download_df)})", data=convert_df_to_json(download_df),
             file_name=f"{DEFAULT_EXPORT_FILENAME}{suffix}.json",
-            mime="application/json",
-            use_container_width=True,
+            mime="application/json", use_container_width=True,
         )
-        # CSV
-        csv_output = convert_df_to_csv(download_df)
         st.download_button(
-            label=f"📥 CSV İndir ({len(download_df)})",
-            data=csv_output,
+            label=f"📥 CSV ({len(download_df)})", data=convert_df_to_csv(download_df),
             file_name=f"{DEFAULT_EXPORT_FILENAME}{suffix}.csv",
-            mime="text/csv",
-            use_container_width=True,
+            mime="text/csv", use_container_width=True,
         )
-
-        add_history({"type": "export", "count": len(download_df), "time": time.time()})
 
 
 # =====================================================================
@@ -725,21 +689,17 @@ tab_editor, tab_stats, tab_favorites, tab_history, tab_tools = st.tabs(
     ["📝 Düzenleyici", "📊 İstatistikler", "⭐ Favoriler", "📜 Geçmiş", "🔧 Araçlar"]
 )
 
-# =====================================================================
-# SEKME 1: DÜZENLEYICI
-# =====================================================================
+# --- SEKME 1: DÜZENLEYICI ---
 with tab_editor:
     if not st.session_state.data.empty:
-        # Metrikler
         pstats = get_playlist_stats(st.session_state.data)
         mc1, mc2, mc3, mc4, mc5 = st.columns(5)
         mc1.metric("📺 Toplam", pstats["total"])
-        mc2.metric("✅ Seçilen", len(st.session_state.data[st.session_state.data.get("Seç", False) == True]))
+        mc2.metric("✅ Seçilen", int(_get_selected_mask(st.session_state.data).sum()))
         mc3.metric("📁 Grup", pstats["groups"])
-        mc4.metric("🔄 Çift", int(pstats["duplicates"]))
-        mc5.metric("⚠️ Boş URL", int(pstats["empty_urls"]))
+        mc4.metric("🔄 Çift", pstats["duplicates"])
+        mc5.metric("⚠️ Boş URL", pstats["empty_urls"])
 
-        # Arama
         search_col1, search_col2 = st.columns([3, 1])
         with search_col1:
             search_term = st.text_input("🔍 Ara (Grup, Kanal Adı, URL):", "", key="main_search")
@@ -747,12 +707,8 @@ with tab_editor:
             search_field = st.selectbox("Arama Alanı", ["Tümü", "Grup", "Kanal Adı", "URL"], key="search_field")
 
         df_display = st.session_state.data.copy()
-
-        # Grup filtresi
         if selected_groups:
             df_display = df_display[df_display["Grup"].isin(selected_groups)]
-
-        # Metin araması
         if search_term:
             if search_field == "Tümü":
                 df_display = df_display[
@@ -765,7 +721,7 @@ with tab_editor:
 
         st.caption(f"Gösterilen: {len(df_display)} / {len(st.session_state.data)} kanal")
 
-        # --- Canlı Oynatıcı ---
+        # Canlı Oynatıcı
         st.markdown("### 🎬 Canlı Oynatıcı")
         col_play1, col_play2, col_play3 = st.columns([3, 1, 1])
         with col_play1:
@@ -799,7 +755,6 @@ with tab_editor:
                         else:
                             st.info("Zaten favorilerde.")
 
-        # Player
         if st.session_state.play_channel:
             pc = st.session_state.play_channel
             pcol1, pcol2 = st.columns([1, 4])
@@ -808,31 +763,25 @@ with tab_editor:
                     try:
                         st.image(pc["logo"], width=120)
                     except Exception:
-                        st.markdown("🖼️ Logo yüklenemedi")
+                        pass
                 st.markdown(f"**Grup:** {pc.get('group', 'N/A')}")
             with pcol2:
                 st.markdown(f"### ▶ {pc['name']}")
                 components.html(render_live_player(pc["url"], height=380), height=420)
 
-            if st.button("⏹ Oynatmayı Durdur", use_container_width=True):
+            if st.button("⏹ Durdur", use_container_width=True):
                 st.session_state.play_channel = None
                 st.rerun()
             st.markdown("---")
 
-        # Tablo
         st.caption("Kanalları düzenlemek için tablodaki hücrelere tıklayın.")
-
-        # Görüntülenecek kolonları seç
         display_cols = [c for c in ["Seç", "Favori", "Grup", "Kanal Adı", "URL", "Tür", "Durum"]
                         if c in df_display.columns]
 
         edited_df = st.data_editor(
             df_display[display_cols] if display_cols else df_display,
-            num_rows="dynamic",
-            use_container_width=True,
-            hide_index=True,
-            height=TABLE_HEIGHT,
-            key="editor",
+            num_rows="dynamic", use_container_width=True, hide_index=True,
+            height=TABLE_HEIGHT, key="editor",
             column_config={
                 "Seç": st.column_config.CheckboxColumn("✅", default=False, width="small"),
                 "Favori": st.column_config.CheckboxColumn("⭐", default=False, width="small"),
@@ -842,142 +791,98 @@ with tab_editor:
             },
         )
 
-        if edited_df is not None and not edited_df.equals(df_display[display_cols] if display_cols else df_display):
-            st.session_state.data.update(edited_df)
-
+        if edited_df is not None:
+            ref = df_display[display_cols] if display_cols else df_display
+            if not edited_df.equals(ref):
+                st.session_state.data.update(edited_df)
     else:
         st.markdown(
-            """
-            <div style='text-align:center;padding:80px 20px;'>
-                <div style='font-size:4rem;margin-bottom:1rem;'>📺</div>
-                <h2 style='color:#ccc;'>M3U Editör Pro'ya Hoş Geldiniz</h2>
-                <p style='color:#888;font-size:1.1rem;max-width:500px;margin:1rem auto;'>
-                    Sol menüden bir M3U linki yapıştırın, dosya yükleyin veya metin yapıştırarak başlayın.
-                </p>
-                <div style='display:flex;justify-content:center;gap:20px;margin-top:2rem;flex-wrap:wrap;'>
-                    <div style='background:rgba(255,75,75,0.1);border:1px solid rgba(255,75,75,0.3);
-                         border-radius:12px;padding:20px;width:180px;'>
-                        <div style='font-size:2rem;'>🌐</div>
-                        <p style='color:#ccc;font-size:0.9rem;'>Linkten Yükle</p>
-                    </div>
-                    <div style='background:rgba(75,139,255,0.1);border:1px solid rgba(75,139,255,0.3);
-                         border-radius:12px;padding:20px;width:180px;'>
-                        <div style='font-size:2rem;'>📂</div>
-                        <p style='color:#ccc;font-size:0.9rem;'>Dosya Yükle</p>
-                    </div>
-                    <div style='background:rgba(75,255,139,0.1);border:1px solid rgba(75,255,139,0.3);
-                         border-radius:12px;padding:20px;width:180px;'>
-                        <div style='font-size:2rem;'>📋</div>
-                        <p style='color:#ccc;font-size:0.9rem;'>Metin Yapıştır</p>
-                    </div>
-                </div>
-            </div>
-            """,
+            "<div style='text-align:center;padding:80px 20px;'>"
+            "<div style='font-size:4rem;margin-bottom:1rem;'>📺</div>"
+            "<h2 style='color:#ccc;'>M3U Editör Pro'ya Hoş Geldiniz</h2>"
+            "<p style='color:#888;font-size:1.1rem;max-width:500px;margin:1rem auto;'>"
+            "Sol menüden bir M3U linki yapıştırın, dosya yükleyin veya metin yapıştırarak başlayın.</p>"
+            "</div>",
             unsafe_allow_html=True,
         )
 
 
-# =====================================================================
-# SEKME 2: İSTATİSTİKLER
-# =====================================================================
+# --- SEKME 2: İSTATİSTİKLER ---
 with tab_stats:
     if not st.session_state.data.empty:
         st.markdown("### 📊 Playlist Analizi")
         pstats = get_playlist_stats(st.session_state.data)
 
-        # Özet metrikler
         s1, s2, s3, s4 = st.columns(4)
-        s1.metric("📺 Toplam Kanal", pstats["total"])
-        s2.metric("📁 Grup Sayısı", pstats["groups"])
-        s3.metric("🔄 Tekrarlı", int(pstats["duplicates"]))
-        s4.metric("📡 HLS Kanal", int(pstats["hls_count"]))
+        s1.metric("📺 Toplam", pstats["total"])
+        s2.metric("📁 Grup", pstats["groups"])
+        s3.metric("🔄 Tekrarlı", pstats["duplicates"])
+        s4.metric("📡 HLS", pstats["hls_count"])
 
-        # Grup dağılımı
         if pstats["group_distribution"]:
             st.markdown("#### 📁 Grup Dağılımı (İlk 20)")
-            group_df = pd.DataFrame(
-                list(pstats["group_distribution"].items()),
-                columns=["Grup", "Kanal Sayısı"]
-            )
+            group_df = pd.DataFrame(list(pstats["group_distribution"].items()), columns=["Grup", "Kanal Sayısı"])
             st.bar_chart(group_df.set_index("Grup"), height=400)
 
-        # Tür dağılımı
         if pstats["type_distribution"]:
             st.markdown("#### 📡 Akış Türü Dağılımı")
-            type_df = pd.DataFrame(
-                list(pstats["type_distribution"].items()),
-                columns=["Tür", "Sayı"]
-            )
+            type_df = pd.DataFrame(list(pstats["type_distribution"].items()), columns=["Tür", "Sayı"])
             tc1, tc2 = st.columns([1, 2])
             with tc1:
                 st.dataframe(type_df, hide_index=True, use_container_width=True)
             with tc2:
                 st.bar_chart(type_df.set_index("Tür"), height=300)
 
-        # Dil dağılımı
         if "Dil" in st.session_state.data.columns:
             lang_counts = st.session_state.data["Dil"].dropna().astype(str)
             lang_counts = lang_counts[lang_counts != ""].value_counts().head(15)
             if not lang_counts.empty:
                 st.markdown("#### 🌍 Dil Dağılımı")
-                lang_df = pd.DataFrame({"Dil": lang_counts.index, "Sayı": lang_counts.values})
-                st.bar_chart(lang_df.set_index("Dil"), height=300)
+                st.bar_chart(pd.DataFrame({"Dil": lang_counts.index, "Sayı": lang_counts.values}).set_index("Dil"), height=300)
 
-        # URL sağlık kontrolü
         st.markdown("#### 🔍 URL Sağlık Kontrolü")
         hc1, hc2 = st.columns([1, 3])
         with hc1:
-            max_check = st.number_input("Kontrol edilecek max kanal", min_value=1, max_value=500, value=50)
-            workers = st.number_input("Paralel iş parçacığı", min_value=1, max_value=20, value=10)
+            max_check = st.number_input("Max kanal", min_value=1, max_value=500, value=50)
+            workers = st.number_input("Paralel thread", min_value=1, max_value=20, value=10)
         with hc2:
             if st.button("🚀 Sağlık Kontrolü Başlat", use_container_width=True, type="primary"):
                 df = st.session_state.data.copy()
                 urls = df["URL"].astype(str).tolist()[:max_check]
-                with st.spinner(f"{len(urls)} URL kontrol ediliyor ({workers} paralel)..."):
-                    progress = st.progress(0)
+                with st.spinner(f"{len(urls)} URL kontrol ediliyor..."):
                     results = check_urls_parallel(urls, max_workers=workers)
-                    progress.progress(100)
-
-                # Sonuçları uygula
                 df.loc[df.index[:len(results)], "Durum"] = results
                 st.session_state.data = df
-
                 ok_count = sum(1 for r in results if "OK" in r)
                 err_count = sum(1 for r in results if "HATA" in r or "HTTP" in r)
-                st.success(f"✅ {ok_count} aktif, ❌ {err_count} hatalı, toplam {len(results)} kontrol edildi.")
+                st.success(f"✅ {ok_count} aktif, ❌ {err_count} hatalı")
                 st.rerun()
 
-        # Durum özeti
         if "Durum" in st.session_state.data.columns:
             durum_counts = st.session_state.data["Durum"].astype(str).value_counts()
             durum_counts = durum_counts[durum_counts.index != ""]
             if not durum_counts.empty:
                 st.markdown("#### 📋 Durum Özeti")
-                st.dataframe(
-                    pd.DataFrame({"Durum": durum_counts.index, "Sayı": durum_counts.values}),
-                    hide_index=True, use_container_width=True,
-                )
+                st.dataframe(pd.DataFrame({"Durum": durum_counts.index, "Sayı": durum_counts.values}),
+                             hide_index=True, use_container_width=True)
     else:
         st.info("📊 İstatistikleri görmek için önce bir playlist yükleyin.")
 
 
-# =====================================================================
-# SEKME 3: FAVORİLER
-# =====================================================================
+# --- SEKME 3: FAVORİLER ---
 with tab_favorites:
     st.markdown("### ⭐ Favori Kanallarım")
     favs = load_favorites()
 
     if favs:
         fav_df = pd.DataFrame(favs)
-        display_fav_cols = [c for c in ["Kanal Adı", "Grup", "URL", "LogoURL", "added_at"] if c in fav_df.columns]
+        display_fav_cols = [c for c in ["Kanal Adı", "Grup", "URL", "added_at"] if c in fav_df.columns]
         st.dataframe(fav_df[display_fav_cols], hide_index=True, use_container_width=True, height=400)
 
-        # Favori oynat
         fav_names = fav_df["Kanal Adı"].tolist() if "Kanal Adı" in fav_df.columns else []
         fc1, fc2, fc3 = st.columns([3, 1, 1])
         with fc1:
-            fav_play = st.selectbox("Favori Kanal Seç", fav_names, index=None,
+            fav_play = st.selectbox("Favori Kanal", fav_names, index=None,
                                     placeholder="Kanal seçin...", key="fav_play_select")
         with fc2:
             st.markdown("<br>", unsafe_allow_html=True)
@@ -985,10 +890,8 @@ with tab_favorites:
                 if fav_play:
                     fav_row = fav_df[fav_df["Kanal Adı"] == fav_play].iloc[0]
                     st.session_state.play_channel = {
-                        "name": fav_play,
-                        "url": fav_row.get("URL", ""),
-                        "logo": fav_row.get("LogoURL", ""),
-                        "group": fav_row.get("Grup", ""),
+                        "name": fav_play, "url": fav_row.get("URL", ""),
+                        "logo": fav_row.get("LogoURL", ""), "group": fav_row.get("Grup", ""),
                     }
                     st.rerun()
         with fc3:
@@ -997,57 +900,35 @@ with tab_favorites:
                 if fav_play:
                     fav_row = fav_df[fav_df["Kanal Adı"] == fav_play].iloc[0]
                     remove_favorite(fav_play, fav_row.get("URL", ""))
-                    st.success(f"🗑️ {fav_play} favorilerden silindi.")
+                    st.success(f"🗑️ {fav_play} silindi.")
                     st.rerun()
 
-        # Favorileri M3U olarak indir
-        if st.button("📥 Favorileri M3U Olarak İndir", use_container_width=True):
-            fav_m3u = convert_df_to_m3u(fav_df)
-            st.download_button(
-                label="💾 İndir",
-                data=fav_m3u,
-                file_name="favoriler.m3u",
-                mime="text/plain",
-            )
-
-        # Tümünü temizle
         if st.button("🗑️ Tüm Favorileri Temizle", use_container_width=True):
             save_favorites([])
-            st.success("Tüm favoriler temizlendi.")
+            st.success("Favoriler temizlendi.")
             st.rerun()
     else:
         st.markdown(
-            """
-            <div style='text-align:center;padding:60px;'>
-                <div style='font-size:3rem;'>⭐</div>
-                <p style='color:#888;margin-top:1rem;'>Henüz favori kanal eklenmemiş.</p>
-                <p style='color:#666;font-size:0.9rem;'>Düzenleyici sekmesinden kanalları favorilere ekleyebilirsiniz.</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
+            "<div style='text-align:center;padding:60px;'>"
+            "<div style='font-size:3rem;'>⭐</div>"
+            "<p style='color:#888;margin-top:1rem;'>Henüz favori kanal yok.</p>"
+            "</div>", unsafe_allow_html=True,
         )
 
 
-# =====================================================================
-# SEKME 4: GEÇMİŞ
-# =====================================================================
+# --- SEKME 4: GEÇMİŞ ---
 with tab_history:
     st.markdown("### 📜 İşlem Geçmişi")
     hist = _load_json_file(HISTORY_FILE)
 
     if hist:
         hist_df = pd.DataFrame(hist)
-        # Tarih formatla
         if "timestamp" in hist_df.columns:
             hist_df["timestamp"] = pd.to_datetime(hist_df["timestamp"], errors="coerce")
             hist_df = hist_df.sort_values("timestamp", ascending=False)
-        if "time" in hist_df.columns:
-            hist_df["time"] = pd.to_datetime(hist_df["time"], unit="s", errors="coerce")
-
         display_hist_cols = [c for c in ["type", "count", "url", "timestamp"] if c in hist_df.columns]
         st.dataframe(hist_df[display_hist_cols].head(50), hide_index=True, use_container_width=True, height=400)
 
-        # Geçmişi temizle
         if st.button("🗑️ Geçmişi Temizle", use_container_width=True):
             _save_json_file(HISTORY_FILE, [])
             st.success("Geçmiş temizlendi.")
@@ -1056,9 +937,7 @@ with tab_history:
         st.info("📜 Henüz işlem geçmişi yok.")
 
 
-# =====================================================================
-# SEKME 5: ARAÇLAR
-# =====================================================================
+# --- SEKME 5: ARAÇLAR ---
 with tab_tools:
     st.markdown("### 🔧 Gelişmiş Araçlar")
 
@@ -1066,15 +945,14 @@ with tab_tools:
         "🔀 Playlist Birleştirici",
         "🔍 Playlist Karşılaştırıcı",
         "✏️ Toplu Grup Adı Değiştir",
-        "🔗 URL Düzenleyici (Bul & Değiştir)",
+        "🔗 URL Bul & Değiştir",
         "📌 Yer İmi Yöneticisi",
         "🧹 Gelişmiş Temizlik",
     ], key="tool_select")
 
     if tool_choice == "🔀 Playlist Birleştirici":
-        st.markdown("#### 🔀 İki Playlist'i Birleştir")
-        st.info("Mevcut listeye yeni bir M3U dosyası ekleyin. Çift kanallar otomatik kaldırılır.")
-        merge_file = st.file_uploader("Birleştirilecek M3U Dosyası", type=["m3u", "m3u8"], key="merge_upload")
+        st.info("Mevcut listeye yeni bir M3U ekleyin. Çiftler otomatik kaldırılır.")
+        merge_file = st.file_uploader("M3U Dosyası", type=["m3u", "m3u8"], key="merge_upload")
         if merge_file and st.button("🔀 Birleştir", type="primary"):
             if not st.session_state.data.empty:
                 push_undo()
@@ -1083,15 +961,13 @@ with tab_tools:
                 new_df = _prepare_new_data(new_channels)
                 before = len(st.session_state.data)
                 st.session_state.data = merge_playlists(st.session_state.data, new_df)
-                after = len(st.session_state.data)
-                st.success(f"✅ {after - before} yeni kanal eklendi. Toplam: {after}")
+                st.success(f"✅ {len(st.session_state.data) - before} yeni kanal eklendi.")
                 st.rerun()
             else:
                 st.warning("Önce bir playlist yükleyin.")
 
     elif tool_choice == "🔍 Playlist Karşılaştırıcı":
-        st.markdown("#### 🔍 İki Playlist'i Karşılaştır")
-        compare_file = st.file_uploader("Karşılaştırılacak M3U Dosyası", type=["m3u", "m3u8"], key="compare_upload")
+        compare_file = st.file_uploader("Karşılaştırılacak M3U", type=["m3u", "m3u8"], key="compare_upload")
         if compare_file and st.button("🔍 Karşılaştır", type="primary"):
             if not st.session_state.data.empty:
                 stringio = io.StringIO(compare_file.getvalue().decode("utf-8", errors="ignore"))
@@ -1101,9 +977,9 @@ with tab_tools:
                 current_keys = set(st.session_state.data["Kanal Adı"].astype(str) + "|" + st.session_state.data["URL"].astype(str))
                 compare_keys = set(compare_df["Kanal Adı"].astype(str) + "|" + compare_df["URL"].astype(str))
 
+                common = current_keys & compare_keys
                 only_current = current_keys - compare_keys
                 only_compare = compare_keys - current_keys
-                common = current_keys & compare_keys
 
                 cc1, cc2, cc3 = st.columns(3)
                 cc1.metric("🟢 Ortak", len(common))
@@ -1111,7 +987,7 @@ with tab_tools:
                 cc3.metric("🟠 Sadece Yeni", len(only_compare))
 
                 if only_compare:
-                    st.markdown("##### 🟠 Yeni Dosyada Olup Mevcut Listede Olmayan Kanallar")
+                    st.markdown("##### 🟠 Yeni Dosyada Olup Mevcut Listede Olmayan")
                     new_only = compare_df[
                         (compare_df["Kanal Adı"].astype(str) + "|" + compare_df["URL"].astype(str)).isin(only_compare)
                     ]
@@ -1120,31 +996,29 @@ with tab_tools:
                 st.warning("Önce bir playlist yükleyin.")
 
     elif tool_choice == "✏️ Toplu Grup Adı Değiştir":
-        st.markdown("#### ✏️ Toplu Grup Adı Değiştir")
         if not st.session_state.data.empty:
             groups = sorted(st.session_state.data["Grup"].astype(str).unique())
             old_group = st.selectbox("Eski Grup Adı", groups, key="old_group")
             new_group = st.text_input("Yeni Grup Adı", key="new_group")
             if st.button("✏️ Değiştir", type="primary") and new_group:
                 push_undo()
-                count = (st.session_state.data["Grup"] == old_group).sum()
+                count = int((st.session_state.data["Grup"] == old_group).sum())
                 st.session_state.data.loc[st.session_state.data["Grup"] == old_group, "Grup"] = new_group
-                st.success(f"✅ {count} kanalın grup adı '{old_group}' → '{new_group}' olarak değiştirildi.")
+                st.success(f"✅ {count} kanal güncellendi: '{old_group}' → '{new_group}'")
                 st.rerun()
         else:
             st.info("Önce bir playlist yükleyin.")
 
-    elif tool_choice == "🔗 URL Düzenleyici (Bul & Değiştir)":
-        st.markdown("#### 🔗 URL'lerde Bul & Değiştir")
+    elif tool_choice == "🔗 URL Bul & Değiştir":
         if not st.session_state.data.empty:
-            find_str = st.text_input("Bulunacak metin (URL içinde):", key="url_find")
+            find_str = st.text_input("Bulunacak metin:", key="url_find")
             replace_str = st.text_input("Değiştirilecek metin:", key="url_replace")
             if st.button("🔗 Değiştir", type="primary") and find_str:
                 push_undo()
                 mask = st.session_state.data["URL"].astype(str).str.contains(find_str, na=False)
-                count = mask.sum()
+                count = int(mask.sum())
                 st.session_state.data.loc[mask, "URL"] = (
-                    st.session_state.data.loc[mask, "URL"].astype(str).str.replace(find_str, replace_str)
+                    st.session_state.data.loc[mask, "URL"].astype(str).str.replace(find_str, replace_str, regex=False)
                 )
                 st.success(f"✅ {count} URL güncellendi.")
                 st.rerun()
@@ -1152,67 +1026,59 @@ with tab_tools:
             st.info("Önce bir playlist yükleyin.")
 
     elif tool_choice == "📌 Yer İmi Yöneticisi":
-        st.markdown("#### 📌 Kayıtlı URL Yer İmleri")
         bms = load_bookmarks()
         if bms:
-            bm_df = pd.DataFrame(bms)
-            st.dataframe(bm_df, hide_index=True, use_container_width=True)
-
-            del_bm = st.selectbox("Silinecek Yer İmi", [b.get("name", b.get("url", "")) for b in bms], key="del_bm")
-            if st.button("🗑️ Yer İmini Sil"):
+            st.dataframe(pd.DataFrame(bms), hide_index=True, use_container_width=True)
+            del_bm = st.selectbox("Silinecek", [b.get("name", b.get("url", "")) for b in bms], key="del_bm")
+            if st.button("🗑️ Sil"):
                 bms = [b for b in bms if b.get("name", b.get("url", "")) != del_bm]
                 save_bookmarks(bms)
-                st.success("Yer imi silindi.")
+                st.success("Silindi.")
                 st.rerun()
         else:
-            st.info("Henüz yer imi yok. Sol menüden URL'leri yer imlerine ekleyebilirsiniz.")
+            st.info("Henüz yer imi yok.")
 
-        # Manuel yer imi ekle
-        st.markdown("##### ➕ Yeni Yer İmi Ekle")
+        st.markdown("##### ➕ Yeni Yer İmi")
         bm_name = st.text_input("İsim:", key="new_bm_name")
         bm_url = st.text_input("URL:", key="new_bm_url")
         if st.button("➕ Ekle", key="add_bm_btn") and bm_url:
             bms = load_bookmarks()
             bms.append({"name": bm_name or bm_url[:50], "url": bm_url, "added": datetime.now().isoformat()})
             save_bookmarks(bms)
-            st.success("Yer imi eklendi.")
+            st.success("Eklendi.")
             st.rerun()
 
     elif tool_choice == "🧹 Gelişmiş Temizlik":
-        st.markdown("#### 🧹 Gelişmiş Temizlik Araçları")
         if not st.session_state.data.empty:
-            st.markdown("##### Hatalı Kanalları Temizle")
-            if st.button("🗑️ Durum = HATA olan kanalları sil", use_container_width=True):
+            if st.button("🗑️ Hatalı kanalları sil (Durum=HATA)", use_container_width=True):
                 if "Durum" in st.session_state.data.columns:
                     push_undo()
                     mask = st.session_state.data["Durum"].astype(str).str.contains("HATA|HTTP", na=False)
-                    count = mask.sum()
+                    count = int(mask.sum())
                     st.session_state.data = st.session_state.data[~mask].reset_index(drop=True)
                     st.success(f"🗑️ {count} hatalı kanal silindi.")
                     st.rerun()
                 else:
-                    st.info("Önce URL sağlık kontrolü yapın.")
+                    st.info("Önce sağlık kontrolü yapın.")
 
-            st.markdown("##### Grup Adlarını Standartlaştır")
-            if st.button("🔤 Grup adlarını büyük harfe çevir", use_container_width=True):
+            if st.button("🔤 Grup adlarını BÜYÜK HARF yap", use_container_width=True):
                 push_undo()
                 st.session_state.data["Grup"] = st.session_state.data["Grup"].astype(str).str.upper()
-                st.success("Grup adları büyük harfe çevrildi.")
+                st.success("Güncellendi.")
                 st.rerun()
 
-            if st.button("🔤 Grup adlarını başlık formatına çevir", use_container_width=True):
+            if st.button("🔤 Grup adlarını Başlık Formatı yap", use_container_width=True):
                 push_undo()
                 st.session_state.data["Grup"] = st.session_state.data["Grup"].astype(str).str.title()
-                st.success("Grup adları başlık formatına çevrildi.")
+                st.success("Güncellendi.")
                 st.rerun()
 
-            st.markdown("##### Kanal Adı Temizliği")
             if st.button("✨ Kanal adlarındaki fazla boşlukları temizle", use_container_width=True):
                 push_undo()
                 st.session_state.data["Kanal Adı"] = (
                     st.session_state.data["Kanal Adı"].astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
                 )
-                st.success("Kanal adları temizlendi.")
+                st.success("Temizlendi.")
                 st.rerun()
         else:
             st.info("Önce bir playlist yükleyin.")
@@ -1236,41 +1102,26 @@ except Exception:
     last_visit_str = "N/A"
 
 st.markdown(
-    f"""
-    <div style='text-align:center;padding:30px 20px;background:rgba(0,0,0,0.15);border-radius:12px;margin-top:40px;'>
-        <div style='margin-bottom:20px;'>
-            <h3 style='margin:0 0 15px 0;color:#aaa;font-size:1.1rem;'>📊 Ziyaretçi İstatistikleri</h3>
-            <div style='display:flex;justify-content:center;gap:40px;flex-wrap:wrap;'>
-                <div style='text-align:center;'>
-                    <div style='font-size:0.75rem;color:#888;'>🌟 Benzersiz</div>
-                    <div style='font-size:1.8rem;font-weight:bold;color:#FF4B4B;'>{stats['unique_visitors']}</div>
-                </div>
-                <div style='text-align:center;'>
-                    <div style='font-size:0.75rem;color:#888;'>📊 Toplam</div>
-                    <div style='font-size:1.8rem;font-weight:bold;color:#FF4B4B;'>{stats['total_visits']}</div>
-                </div>
-                <div style='text-align:center;'>
-                    <div style='font-size:0.75rem;color:#888;'>📅 İlk Ziyaret</div>
-                    <div style='font-size:1rem;font-weight:bold;color:#FF4B4B;'>{first_visit_str}</div>
-                </div>
-                <div style='text-align:center;'>
-                    <div style='font-size:0.75rem;color:#888;'>🕒 Son Ziyaret</div>
-                    <div style='font-size:1rem;font-weight:bold;color:#FF4B4B;'>{last_visit_str}</div>
-                </div>
-            </div>
-        </div>
-        <div style='border-top:1px solid rgba(255,255,255,0.1);padding-top:20px;margin-top:20px;'>
-            <p style='margin:0;font-size:0.85rem;color:#666;'>
-                © 2025 M3U Editör Pro v2.0 |
-                <a href='https://github.com/yourusername/m3uedit' target='_blank' style='color:#FF4B4B;text-decoration:none;'>GitHub</a> |
-                <a href='docs/KULLANIM_KILAVUZU.md' target='_blank' style='color:#FF4B4B;text-decoration:none;'>Dokümantasyon</a> |
-                <a href='LICENSE' target='_blank' style='color:#FF4B4B;text-decoration:none;'>MIT Lisans</a>
-            </p>
-            <p style='margin:8px 0 0 0;font-size:0.7rem;color:#555;'>
-                Streamlit {st.__version__} ile geliştirildi | Python {sys.version.split()[0]}
-            </p>
-        </div>
-    </div>
-    """,
+    f"<div style='text-align:center;padding:30px 20px;background:rgba(0,0,0,0.15);border-radius:12px;margin-top:40px;'>"
+    f"<div style='margin-bottom:20px;'>"
+    f"<h3 style='margin:0 0 15px 0;color:#aaa;font-size:1.1rem;'>📊 Ziyaretçi İstatistikleri</h3>"
+    f"<div style='display:flex;justify-content:center;gap:40px;flex-wrap:wrap;'>"
+    f"<div style='text-align:center;'><div style='font-size:0.75rem;color:#888;'>🌟 Benzersiz</div>"
+    f"<div style='font-size:1.8rem;font-weight:bold;color:#FF4B4B;'>{stats['unique_visitors']}</div></div>"
+    f"<div style='text-align:center;'><div style='font-size:0.75rem;color:#888;'>📊 Toplam</div>"
+    f"<div style='font-size:1.8rem;font-weight:bold;color:#FF4B4B;'>{stats['total_visits']}</div></div>"
+    f"<div style='text-align:center;'><div style='font-size:0.75rem;color:#888;'>📅 İlk</div>"
+    f"<div style='font-size:1rem;font-weight:bold;color:#FF4B4B;'>{first_visit_str}</div></div>"
+    f"<div style='text-align:center;'><div style='font-size:0.75rem;color:#888;'>🕒 Son</div>"
+    f"<div style='font-size:1rem;font-weight:bold;color:#FF4B4B;'>{last_visit_str}</div></div>"
+    f"</div></div>"
+    f"<div style='border-top:1px solid rgba(255,255,255,0.1);padding-top:20px;margin-top:20px;'>"
+    f"<p style='margin:0;font-size:0.85rem;color:#666;'>"
+    f"© 2025 M3U Editör Pro v2.0 | "
+    f"<a href='https://github.com/yourusername/m3uedit' target='_blank' style='color:#FF4B4B;text-decoration:none;'>GitHub</a> | "
+    f"<a href='LICENSE' target='_blank' style='color:#FF4B4B;text-decoration:none;'>MIT Lisans</a></p>"
+    f"<p style='margin:8px 0 0 0;font-size:0.7rem;color:#555;'>"
+    f"Streamlit {st.__version__} | Python {sys.version.split()[0]}</p>"
+    f"</div></div>",
     unsafe_allow_html=True,
 )

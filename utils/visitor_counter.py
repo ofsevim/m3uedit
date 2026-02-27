@@ -10,8 +10,28 @@ class VisitorCounter:
     """Ziyaretçi sayacı - JSON dosyası ile ziyaretçi sayısını takip eder."""
 
     def __init__(self, counter_file="visitor_data.json"):
-        self.counter_file = counter_file
+        # Streamlit Cloud uyumluluğu: yazılabilir dizin bul
+        self.counter_file = self._resolve_path(counter_file)
         self._ensure_file_exists()
+
+    @staticmethod
+    def _resolve_path(filename: str) -> str:
+        """Yazılabilir bir dizinde dosya yolu döndürür."""
+        # Zaten mutlak yol verilmişse olduğu gibi kullan
+        if os.path.isabs(filename):
+            return filename
+        # /tmp varsa ve yazılabilirse orayı kullan (Cloud uyumlu)
+        for d in ["/tmp", os.environ.get("TMPDIR", "")]:
+            if d and os.path.isdir(d):
+                try:
+                    test = os.path.join(d, ".vc_test")
+                    with open(test, "w") as f:
+                        f.write("t")
+                    os.remove(test)
+                    return os.path.join(d, filename)
+                except OSError:
+                    continue
+        return filename
 
     def _ensure_file_exists(self):
         """Sayaç dosyası yoksa oluştur."""
