@@ -6,13 +6,28 @@ import urllib.error
 import re
 import io
 import json
-from visitor_counter import VisitorCounter
 import hashlib
 import time
 import uuid
+import sys
+import os
+
+# Utils klasörünü Python path'ine ekle
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utils'))
+
+from visitor_counter import VisitorCounter
+from m3u_parser import M3UParser, parse_m3u_lines, filter_channels, convert_df_to_m3u
 
 # Simple persistence for user history (last loads/exports)
 HISTORY_FILE = "history.json"
+
+# CSS stil dosyasını yükle
+def load_css():
+    css_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'styles.css')
+    if os.path.exists(css_path):
+        with open(css_path, 'r', encoding='utf-8') as f:
+            css_content = f.read()
+            st.markdown(f'<style>{css_content}</style>', unsafe_allow_html=True)
 
 def _load_history():
     try:
@@ -36,84 +51,13 @@ def add_history(entry):
 # Sayfa Ayarları
 st.set_page_config(page_title="M3U Editör Pro (Web)", layout="wide", page_icon="📺")
 
+# CSS stil dosyasını yükle
+load_css()
+
 # --- GLOBAL TANIMLAMALAR ---
 
-# TR kanal tespiti için regex pattern (parse ve filter'da ortak kullanılıyor)
-TR_PATTERN = re.compile(
-    r'(\b|_|\[|\(|\|)(TR|TURK|TÜRK|TURKIYE|TÜRKİYE|YERLI|ULUSAL|ISTANBUL)(\b|_|\]|\)|\||:)', 
-    re.IGNORECASE
-)
-
-# --- FONKSİYONLAR ---
-
-def parse_m3u_lines(iterator):
-    """
-    urllib veya dosya satırları üzerinde döner.
-    M3U formatındaki kanalları parse eder ve liste olarak döner.
-    """
-    channels = []
-    current_info = None
-
-    for line in iterator:
-        # Gelen satır byte ise decode et, string ise olduğu gibi al
-        if isinstance(line, bytes):
-            try:
-                line = line.decode('utf-8', errors='ignore').strip()
-            except:
-                continue
-        else:
-            line = line.strip()
-
-        if not line:
-            continue
-            
-        if line.startswith("#EXTINF"):
-            info = {"Grup": "Genel", "Kanal Adı": "Bilinmeyen", "URL": "", "LogoURL": ""}
-            # TVG logos may be provided as tvg-logo="<url>"
-            logo_match = re.search(r'tvg-logo="([^"]*)"', line)
-            if logo_match:
-                info["LogoURL"] = logo_match.group(1)
-            
-            grp = re.search(r'group-title="([^"]*)"', line)
-            if grp:
-                info["Grup"] = grp.group(1)
-            
-            parts = line.split(",")
-            if len(parts) > 1:
-                info["Kanal Adı"] = parts[-1].strip()
-            
-            current_info = info
-            
-        elif line and not line.startswith("#"):
-            if current_info:
-                current_info["URL"] = line
-                channels.append(current_info)
-                current_info = None
-
-    return channels
-
-def filter_channels(channels, only_tr=False):
-    """
-    Kanalları filtreler.
-    only_tr=True ise sadece Türk kanallarını döner (TR_PATTERN ile eşleşenler).
-    """
-    if not only_tr:
-        return channels
-        
-    filtered = []
-    
-    for ch in channels:
-        if TR_PATTERN.search(ch["Grup"]):
-            filtered.append(ch)
-            
-    return filtered
-
-def convert_df_to_m3u(df):
-    """Dataframe'i indirilebilir M3U formatına çevirir."""
-    content = "#EXTM3U\n"
-    for index, row in df.iterrows():
-        content += f'#EXTINF:-1 group-title="{row["Grup"]}",{row["Kanal Adı"]}\n{row["URL"]}\n'
-    return content
+# M3U parser instance'ı oluştur
+m3u_parser = M3UParser()
 
 def render_live_player(stream_url: str, height: int = 420) -> str:
     """HTML snippet to embed a video player."""
@@ -149,7 +93,22 @@ if 'data' not in st.session_state:
     st.session_state.data = pd.DataFrame(columns=["Seç", "Grup", "Kanal Adı", "URL"])
 
 with st.sidebar:
-    st.title("IPTV MANAGER")
+    # Logo ve başlık
+    col_logo, col_title = st.columns([1, 3])
+    with col_logo:
+        st.markdown("""
+            <div style="text-align: center;">
+                <div style="font-size: 2rem;">📺</div>
+            </div>
+        """, unsafe_allow_html=True)
+    with col_title:
+        st.markdown("""
+            <div style="padding-top: 0.5rem;">
+                <h2 style="margin: 0; color: #4f46e5; font-weight: 800;">IPTV MANAGER</h2>
+                <p style="margin: 0; color: #64748b; font-size: 0.875rem;">Professional M3U Editor</p>
+            </div>
+        """, unsafe_allow_html=True)
+    
     st.markdown("---")
     
     mode = st.radio("Yükleme Yöntemi", ["🌐 Linkten Yükle", "📂 Dosya Yükle"])
@@ -211,8 +170,8 @@ with st.sidebar:
                         
                         with urllib.request.urlopen(req, timeout=30, context=ctx) as response:
                             duplicates = 0
-                            raw_channels = parse_m3u_lines(response)
-                            final_channels = filter_channels(raw_channels, only_tr)
+                            raw_channels = m3u_parser.parse_m3u_lines(response)
+                            final_channels = m3u_parser.filter_channels(raw_channels, only_tr)
                             new_data = pd.DataFrame(final_channels)
                             duplicates = new_data.duplicated(subset=["Grup", "Kanal Adı", "URL"]).sum() if not new_data.empty else 0
                             
@@ -244,7 +203,7 @@ with st.sidebar:
         if uploaded_file is not None:
             # Dosyayı satır satır okumak için
             stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors='ignore'))
-            raw_channels = parse_m3u_lines(stringio)
+            raw_channels = m3u_parser.parse_m3u_lines(stringio)
             new_data = pd.DataFrame(raw_channels)
             st.success(f"Dosya yüklendi. {len(raw_channels)} kanal.")
 
@@ -297,7 +256,7 @@ with st.sidebar:
             btn_label = "💾 TÜM LİSTEYİ İNDİR"
             file_name_suffix = "_tum_liste"
 
-        m3u_output = convert_df_to_m3u(download_df)
+        m3u_output = m3u_parser.convert_to_m3u(download_df.to_dict('records'))
         st.download_button(
             label=btn_label,
             data=m3u_output,
@@ -347,7 +306,12 @@ with st.sidebar:
         add_history({"type": "export", "count": int(len(download_df)), "format": "json/csv", "time": time.time()})
 
 # Ana Ekran
-st.subheader("Kanal Listesi Düzenleyici")
+st.markdown("""
+    <div class="fade-in">
+        <h1 style="color: #4f46e5; margin-bottom: 0.5rem;">📺 M3U Editör Pro</h1>
+        <p style="color: #64748b; margin-bottom: 2rem;">Profesyonel IPTV playlist yönetimi ve düzenleme</p>
+    </div>
+""", unsafe_allow_html=True)
 
 # Canlı Oynatıcı (Test Et)
 st.subheader("Canlı Oynatıcı (Test Et)")
@@ -359,14 +323,35 @@ if st.button("Oynat", key="play_live_btn"):
         components.html(render_live_player(live_stream_url.strip(), height=420), height=520)
 
 if not st.session_state.data.empty:
+    st.markdown("### 📊 İstatistikler")
+    
     col1, col2, col3 = st.columns(3)
-    col1.metric("Toplam Kanal", len(st.session_state.data))
     
-    selected_count = len(st.session_state.data[st.session_state.data["Seç"] == True])
-    col2.metric("Seçilen Kanal", selected_count)
+    with col1:
+        st.markdown(f"""
+            <div class="metric-card fade-in">
+                <div class="metric-value">{len(st.session_state.data):,}</div>
+                <div class="metric-label">Toplam Kanal</div>
+            </div>
+        """, unsafe_allow_html=True)
     
-    unique_groups = st.session_state.data["Grup"].nunique()
-    col3.metric("Grup Sayısı", unique_groups)
+    with col2:
+        selected_count = len(st.session_state.data[st.session_state.data["Seç"] == True])
+        st.markdown(f"""
+            <div class="metric-card fade-in">
+                <div class="metric-value">{selected_count:,}</div>
+                <div class="metric-label">Seçilen Kanal</div>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        unique_groups = st.session_state.data["Grup"].nunique()
+        st.markdown(f"""
+            <div class="metric-card fade-in">
+                <div class="metric-value">{unique_groups:,}</div>
+                <div class="metric-label">Grup Sayısı</div>
+            </div>
+        """, unsafe_allow_html=True)
 
     search_term = st.text_input("🔍 Tablo içinde ara (Grup veya Kanal Adı):", "")
 
@@ -501,14 +486,16 @@ with col4:
     )
 
 # Footer
-st.markdown(
-    """
-    <div style='text-align: center; color: #888; padding: 20px; margin-top: 20px;'>
-        <p>© 2025 Osoft - M3U Editör Pro</p>
+st.markdown("""
+    <div class="footer">
+        <p>© 2025 M3U Editör Pro v1.0.0 | Made with ❤️ using Streamlit</p>
+        <p style="font-size: 0.75rem; margin-top: 0.5rem;">
+            <a href="https://github.com/yourusername/m3uedit" target="_blank">GitHub</a> • 
+            <a href="https://docs.example.com" target="_blank">Documentation</a> • 
+            <a href="https://github.com/yourusername/m3uedit/issues" target="_blank">Report Issue</a>
+        </p>
     </div>
-    """,
-    unsafe_allow_html=True
-)
+""", unsafe_allow_html=True)
 
 # Kanal Logoları (görsel ipuçları)
 if not st.session_state.data.empty:
