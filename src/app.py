@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -11,16 +12,16 @@ import uuid
 import sys
 import os
 
-# Utils klasörünü Python path'ine ekle
+# Utils klasorunu Python path'ine ekle
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utils'))
 
 try:
     from visitor_counter import VisitorCounter
     from m3u_parser import M3UParser
-    from utils import config
+    import config
     MODULES_LOADED = True
 except ImportError as e:
-    print(f"Modül yükleme hatası: {e}")
+    print(f"Modul yukleme hatasi: {e}")
     MODULES_LOADED = False
     # Fallback basit parser
     class SimpleParser:
@@ -40,14 +41,14 @@ except ImportError as e:
                     continue
                     
                 if line.startswith("#EXTINF"):
-                    info = {"Grup": "Genel", "Kanal Adı": "Bilinmeyen", "URL": ""}
+                    info = {"Grup": "Genel", "Kanal Adi": "Bilinmeyen", "URL": ""}
                     grp = re.search(r'group-title="([^"]*)"', line)
                     if grp:
                         info["Grup"] = grp.group(1)
                     
                     parts = line.split(",")
                     if len(parts) > 1:
-                        info["Kanal Adı"] = parts[-1].strip()
+                        info["Kanal Adi"] = parts[-1].strip()
                     
                     current_info = info
                     
@@ -67,14 +68,14 @@ except ImportError as e:
         def convert_to_m3u(self, channels):
             content = "#EXTM3U\n"
             for channel in channels:
-                content += f'#EXTINF:-1 group-title="{channel["Grup"]}",{channel["Kanal Adı"]}\n{channel["URL"]}\n'
+                content += f'#EXTINF:-1 group-title="{channel["Grup"]}",{channel["Kanal Adi"]}\n{channel["URL"]}\n'
             return content
     
     m3u_parser = SimpleParser()
 
-# Sayfa Ayarları
+# Sayfa Ayarlari
 st.set_page_config(
-    page_title="M3U Editör Pro (Web)", 
+    page_title="M3U Editor Pro (Web)", 
     layout="wide", 
     page_icon="📺",
     initial_sidebar_state="expanded"
@@ -110,7 +111,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# M3U parser instance'ı oluştur
+# M3U parser instance'i olustur
 if MODULES_LOADED:
     try:
         m3u_parser = M3UParser({
@@ -123,7 +124,7 @@ if MODULES_LOADED:
 
 # Session state initialization
 if 'data' not in st.session_state:
-    st.session_state.data = pd.DataFrame(columns=["Seç", "Grup", "Kanal Adı", "URL"])
+    st.session_state.data = pd.DataFrame(columns=["Sec", "Grup", "Kanal Adi", "URL"])
 
 if 'visitor_counter' not in st.session_state and MODULES_LOADED:
     try:
@@ -146,15 +147,15 @@ with st.sidebar:
     
     st.markdown("---")
     
-    mode = st.radio("**Yükleme Yöntemi**", ["🌐 URL'den Yükle", "📂 Dosya Yükle"])
+    mode = st.radio("**Yukleme Yontemi**", ["🌐 URL'den Yukle", "📂 Dosya Yukle"])
     
-    if mode == "🌐 URL'den Yükle":
+    if mode == "🌐 URL'den Yukle":
         url = st.text_input("M3U Linki:", placeholder="https://example.com/playlist.m3u")
-        only_tr = st.checkbox("🇹🇷 Sadece TR Kanalları", value=True)
+        only_tr = st.checkbox("🇹🇷 Sadece TR Kanallari", value=True)
         
-        if st.button("📥 Listeyi Yükle", type="primary", use_container_width=True):
+        if st.button("📥 Listeyi Yukle", type="primary", use_container_width=True):
             if url:
-                with st.spinner("Liste yükleniyor..."):
+                with st.spinner("Liste yukleniyor..."):
                     try:
                         headers = {'User-Agent': 'Mozilla/5.0'}
                         req = urllib.request.Request(url, headers=headers)
@@ -170,70 +171,70 @@ with st.sidebar:
                             
                             if final_channels:
                                 new_data = pd.DataFrame(final_channels)
-                                if "Seç" not in new_data.columns:
-                                    new_data.insert(0, "Seç", False)
+                                if "Sec" not in new_data.columns:
+                                    new_data.insert(0, "Sec", False)
                                 st.session_state.data = new_data
-                                st.success(f"✅ {len(final_channels)} kanal yüklendi!")
+                                st.success(f"✅ {len(final_channels)} kanal yuklendi!")
                             else:
-                                st.warning("Kanal bulunamadı veya format hatalı.")
+                                st.warning("Kanal bulunamadi veya format hatali.")
                     except Exception as e:
                         st.error(f"Hata: {str(e)}")
             else:
-                st.warning("Lütfen bir URL girin.")
+                st.warning("Lutfen bir URL girin.")
     
-    else:  # Dosya Yükleme
-        uploaded_file = st.file_uploader("M3U Dosyası Seç:", type=['m3u', 'm3u8'])
-        if uploaded_file and st.button("📂 Dosyayı Yükle", use_container_width=True):
+    else:  # Dosya Yukleme
+        uploaded_file = st.file_uploader("M3U Dosyasi Sec:", type=['m3u', 'm3u8'])
+        if uploaded_file and st.button("📂 Dosyayi Yukle", use_container_width=True):
             try:
                 stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors='ignore'))
                 raw_channels = m3u_parser.parse_m3u_lines(stringio)
                 if raw_channels:
                     new_data = pd.DataFrame(raw_channels)
-                    if "Seç" not in new_data.columns:
-                        new_data.insert(0, "Seç", False)
+                    if "Sec" not in new_data.columns:
+                        new_data.insert(0, "Sec", False)
                     st.session_state.data = new_data
-                    st.success(f"✅ {len(raw_channels)} kanal yüklendi!")
+                    st.success(f"✅ {len(raw_channels)} kanal yuklendi!")
                 else:
-                    st.warning("Dosyada kanal bulunamadı.")
+                    st.warning("Dosyada kanal bulunamadi.")
             except Exception as e:
                 st.error(f"Hata: {str(e)}")
     
     st.markdown("---")
     
-    # Veri işlemleri
+    # Veri islemleri
     if not st.session_state.data.empty:
-        st.subheader("📊 Veri İşlemleri")
+        st.subheader("📊 Veri Islemleri")
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("✅ Tümünü Seç", use_container_width=True):
-                st.session_state.data["Seç"] = True
+            if st.button("✅ Tumunu Sec", use_container_width=True):
+                st.session_state.data["Sec"] = True
                 st.rerun()
         with col2:
-            if st.button("❌ Seçimi Temizle", use_container_width=True):
-                st.session_state.data["Seç"] = False
+            if st.button("❌ Secimi Temizle", use_container_width=True):
+                st.session_state.data["Sec"] = False
                 st.rerun()
         
-        if st.button("🧹 Çiftleri Temizle", use_container_width=True):
+        if st.button("🧹 Ciftleri Temizle", use_container_width=True):
             before = len(st.session_state.data)
-            st.session_state.data = st.session_state.data.drop_duplicates(subset=["Grup", "Kanal Adı", "URL"], keep='first')
+            st.session_state.data = st.session_state.data.drop_duplicates(subset=["Grup", "Kanal Adi", "URL"], keep='first')
             after = len(st.session_state.data)
-            st.success(f"✅ {before - after} çift kaldırıldı.")
+            st.success(f"✅ {before - after} cift kaldirildi.")
             st.rerun()
         
-        selected_count = len(st.session_state.data[st.session_state.data["Seç"] == True])
+        selected_count = len(st.session_state.data[st.session_state.data["Sec"] == True])
         
         st.markdown("---")
-        st.subheader("💾 İndirme")
+        st.subheader("💾 Indirme")
         
         if selected_count > 0:
-            download_df = st.session_state.data[st.session_state.data["Seç"] == True]
-            btn_label = f"📥 Seçileni İndir ({selected_count})"
+            download_df = st.session_state.data[st.session_state.data["Sec"] == True]
+            btn_label = f"📥 Secileni Indir ({selected_count})"
         else:
             download_df = st.session_state.data
-            btn_label = "📥 Tümünü İndir"
+            btn_label = "📥 Tumunu Indir"
         
-        # M3U İndirme
+        # M3U Indirme
         m3u_content = m3u_parser.convert_to_m3u(download_df.to_dict('records'))
         st.download_button(
             label=btn_label,
@@ -243,13 +244,13 @@ with st.sidebar:
             use_container_width=True
         )
 
-# Ana İçerik
-st.markdown('<h1 class="main-header">📺 M3U Editör Pro</h1>', unsafe_allow_html=True)
-st.markdown("Profesyonel IPTV playlist yönetimi ve düzenleme aracı")
+# Ana Icerik
+st.markdown('<h1 class="main-header">📺 M3U Editor Pro</h1>', unsafe_allow_html=True)
+st.markdown("Profesyonel IPTV playlist yonetimi ve duzenleme araci")
 
 if not st.session_state.data.empty:
-    # İstatistikler
-    st.subheader("📈 İstatistikler")
+    # Istatistikler
+    st.subheader("📈 Istatistikler")
     
     col1, col2, col3 = st.columns(3)
     
@@ -263,11 +264,11 @@ if not st.session_state.data.empty:
         """, unsafe_allow_html=True)
     
     with col2:
-        selected_count = len(st.session_state.data[st.session_state.data["Seç"] == True])
+        selected_count = len(st.session_state.data[st.session_state.data["Sec"] == True])
         st.markdown(f"""
             <div class="metric-card">
                 <div class="metric-value">{selected_count}</div>
-                <div class="metric-label">Seçilen</div>
+                <div class="metric-label">Secilen</div>
             </div>
         """, unsafe_allow_html=True)
     
@@ -285,11 +286,11 @@ if not st.session_state.data.empty:
     
     search_col1, search_col2 = st.columns([3, 1])
     with search_col1:
-        search_term = st.text_input("Ara:", placeholder="Kanal veya grup adı...")
+        search_term = st.text_input("Ara:", placeholder="Kanal veya grup adi...")
     with search_col2:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🔄 Listeyi Temizle"):
-            st.session_state.data = pd.DataFrame(columns=["Seç", "Grup", "Kanal Adı", "URL"])
+            st.session_state.data = pd.DataFrame(columns=["Sec", "Grup", "Kanal Adi", "URL"])
             st.rerun()
     
     # Filtreleme
@@ -297,14 +298,14 @@ if not st.session_state.data.empty:
     if search_term:
         df_display = df_display[
             df_display["Grup"].str.contains(search_term, case=False, na=False) | 
-            df_display["Kanal Adı"].str.contains(search_term, case=False, na=False)
+            df_display["Kanal Adi"].str.contains(search_term, case=False, na=False)
         ]
     
     # Grup filtreleme
     if not df_display.empty:
         group_options = sorted(df_display["Grup"].dropna().unique().tolist())
         if group_options:
-            selected_groups = st.multiselect("Gruplara göre filtrele:", group_options, default=group_options)
+            selected_groups = st.multiselect("Gruplara gore filtrele:", group_options, default=group_options)
             if selected_groups:
                 df_display = df_display[df_display["Grup"].isin(selected_groups)]
     
@@ -316,35 +317,35 @@ if not st.session_state.data.empty:
             hide_index=True,
             height=400,
             column_config={
-                "Seç": st.column_config.CheckboxColumn("Seç", default=False),
+                "Sec": st.column_config.CheckboxColumn("Sec", default=False),
                 "Grup": st.column_config.TextColumn("Grup"),
-                "Kanal Adı": st.column_config.TextColumn("Kanal Adı"),
+                "Kanal Adi": st.column_config.TextColumn("Kanal Adi"),
                 "URL": st.column_config.TextColumn("URL", width="large")
             },
-            disabled=["Grup", "Kanal Adı", "URL"],
+            disabled=["Grup", "Kanal Adi", "URL"],
             key="channel_editor"
         )
     else:
-        st.info("📭 Filtreye uygun kanal bulunamadı.")
+        st.info("📭 Filtreye uygun kanal bulunamadi.")
 else:
     st.info("""
-    👈 **Başlamak için sol menüden:**  
-    1. M3U linki yapıştırın veya  
-    2. M3U dosyası yükleyin  
+    👈 **Baslamak icin sol menuden:**  
+    1. M3U linki yapistirin veya  
+    2. M3U dosyasi yukleyin  
     
-    🚀 **Özellikler:**  
+    🚀 **Ozellikler:**  
     • TR kanal filtreleme  
-    • Çift kanal temizleme  
-    • Seçimli indirme  
-    • Grup bazlı filtreleme
+    • Cift kanal temizleme  
+    • Secimli indirme  
+    • Grup bazli filtreleme
     """)
 
-# Ziyaretçi Sayacı (opsiyonel)
+# Ziyaretci Sayaci (opsiyonel)
 if MODULES_LOADED and 'visitor_counter' in st.session_state:
     try:
         stats = st.session_state.visitor_counter.get_stats()
         st.markdown("---")
-        st.caption(f"👥 Ziyaretçi: {stats.get('unique_visitors', 0)} • 📅 İlk: {stats.get('first_visit', 'Bilinmiyor')}")
+        st.caption(f"👥 Ziyaretci: {stats.get('unique_visitors', 0)} • 📅 Ilk: {stats.get('first_visit', 'Bilinmiyor')}")
     except:
         pass
 
@@ -352,6 +353,6 @@ if MODULES_LOADED and 'visitor_counter' in st.session_state:
 st.markdown("---")
 st.markdown("""
     <div style="text-align: center; color: #64748b; padding: 1rem 0; font-size: 0.875rem;">
-        <p>© 2025 M3U Editör Pro v1.0.0 • Made with Streamlit</p>
+        <p>© 2025 M3U Editor Pro v1.0.0 • Made with Streamlit</p>
     </div>
 """, unsafe_allow_html=True)
