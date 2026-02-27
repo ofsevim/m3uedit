@@ -1,7 +1,10 @@
 import json
 import os
+import logging
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 class VisitorCounter:
     """Ziyaretçi sayacı sınıfı - JSON dosyası kullanarak ziyaretçi sayısını takip eder"""
@@ -30,7 +33,7 @@ class VisitorCounter:
                 data['unique_sessions'] = set(data.get('unique_sessions', []))
                 return data
         except Exception as e:
-            print(f"Veri yükleme hatası: {e}")
+            logger.error(f"Veri yükleme hatası: {e}", exc_info=True)
             return {
                 'total_visits': 0,
                 'unique_sessions': set(),
@@ -48,7 +51,7 @@ class VisitorCounter:
             with open(self.counter_file, 'w', encoding='utf-8') as f:
                 json.dump(save_data, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            print(f"Veri kaydetme hatası: {e}")
+            logger.error(f"Veri kaydetme hatası: {e}", exc_info=True)
     
     def increment_visit(self, session_id=None):
         """Ziyaret sayısını artır"""

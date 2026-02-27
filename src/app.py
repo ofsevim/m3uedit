@@ -11,6 +11,14 @@ import os
 import hashlib
 import time
 import uuid
+import logging
+
+# Log configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Modül yolunu ekle
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -54,15 +62,16 @@ def _load_history():
     try:
         with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Could not load history: {e}")
         return []
 
 def _save_history(hist):
     try:
         with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
             json.dump(hist, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Could not save history: {e}")
 
 def add_history(entry):
     hist = _load_history()
@@ -86,8 +95,8 @@ st.set_page_config(
 try:
     with open('static/styles.css') as f:
         st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
-except:
-    pass
+except Exception as e:
+    logger.warning(f"Could not load custom CSS: {e}")
 
 # --- GLOBAL TANIMLAMALAR ---
 
@@ -99,10 +108,15 @@ TR_PATTERN = re.compile(
 
 # --- FONKSİYONLAR ---
 
-def parse_m3u_lines(iterator):
+def parse_m3u_lines(iterator: iter) -> list[dict]:
     """
-    urllib veya dosya satırları üzerinde döner.
-    M3U formatındaki kanalları parse eder ve liste olarak döner.
+    Parses M3U format lines and extracts channel information.
+
+    Args:
+        iterator: An iterator containing lines of the M3U file (e.g., file object or string lines).
+
+    Returns:
+        A list of dictionaries containing parsed channel details.
     """
     channels = []
     current_info = None
@@ -112,7 +126,8 @@ def parse_m3u_lines(iterator):
         if isinstance(line, bytes):
             try:
                 line = line.decode('utf-8', errors='ignore').strip()
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to decode byte line: {e}")
                 continue
         else:
             line = line.strip()
@@ -145,10 +160,16 @@ def parse_m3u_lines(iterator):
 
     return channels
 
-def filter_channels(channels, only_tr=False):
+def filter_channels(channels: list[dict], only_tr: bool = False) -> list[dict]:
     """
-    Kanalları filtreler.
-    only_tr=True ise sadece Türk kanallarını döner (TR_PATTERN ile eşleşenler).
+    Filters channels based on the Turkish language pattern if specified.
+
+    Args:
+        channels: List of channel dictionaries to filter.
+        only_tr: True to only include Turkish channels, False otherwise.
+
+    Returns:
+        A filtered list of channel dictionaries.
     """
     if not only_tr:
         return channels
@@ -161,8 +182,16 @@ def filter_channels(channels, only_tr=False):
             
     return filtered
 
-def convert_df_to_m3u(df):
-    """Dataframe'i indirilebilir M3U formatına çevirir."""
+def convert_df_to_m3u(df: pd.DataFrame) -> str:
+    """
+    Converts a pandas DataFrame back into M3U playlist format.
+
+    Args:
+        df: DataFrame containing channel information.
+
+    Returns:
+        Structured M3U playlist content as a string.
+    """
     content = "#EXTM3U\n"
     for index, row in df.iterrows():
         content += f'#EXTINF:-1 group-title="{row["Grup"]}",{row["Kanal Adı"]}\n{row["URL"]}\n'
@@ -318,9 +347,11 @@ with st.sidebar:
                      st.error(f"🔌 Bağlantı Hatası: {e.reason}")
                      st.info("💡 İpucu: İnternet bağlantınızı kontrol edin veya VPN kullanmayı deneyin.")
                 except TimeoutError:
+                      logger.warning("Connection timeout", exc_info=True)
                       st.error("⏱️ Zaman Aşımı: Sunucu çok yavaş yanıt veriyor (30 saniye)")
                       st.info("💡 İpucu: Daha sonra tekrar deneyin veya başka bir link kullanın.")
                 except Exception as e:
+                    logger.error("Unexpected error during channel load", exc_info=True)
                     st.error(f"❌ Beklenmeyen Hata: {str(e)}")
                     st.info("💡 İpucu: Link formatı M3U olmalı. Örnek: http://example.com/playlist.m3u")
             else:
@@ -452,8 +483,8 @@ if not st.session_state.data.empty:
         if pc.get("logo"):
             try:
                 st.image(pc["logo"], width=100)
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Could not render logo for channel {pc['name']}: {e}")
         
         # Player
         components.html(render_live_player(pc["url"], height=400), height=500)
@@ -497,14 +528,16 @@ try:
     from datetime import datetime
     first_visit = datetime.fromisoformat(stats['first_visit'])
     first_visit_str = first_visit.strftime("%d.%m.%Y")
-except:
+except Exception as e:
+    logger.debug(f"Error parsing first visit date: {e}")
     first_visit_str = "N/A"
 
 try:
     from datetime import datetime
     last_visit = datetime.fromisoformat(stats['last_visit'])
     last_visit_str = last_visit.strftime("%d.%m.%Y")
-except:
+except Exception as e:
+    logger.debug(f"Error parsing last visit date: {e}")
     last_visit_str = "N/A"
 
 # Footer HTML
