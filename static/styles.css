@@ -1,101 +1,253 @@
-/* M3U Editör Pro - Özel Stiller (Modern & Premium Design) */
+/* M3U Editör Pro v2.0 — Premium Dark Theme */
 
 /* Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-/* Tüm Uygulama Tipografisi */
-html,
-body,
-[data-testid="stAppViewContainer"] {
-    font-family: 'Inter', sans-serif !important;
-    color: #ffffff !important;
+/* ===== GLOBAL ===== */
+html, body, [data-testid="stAppViewContainer"] {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    color: #e2e8f0 !important;
 }
 
-/* Ana container arka plan gradient */
 .stApp {
-    background: linear-gradient(135deg, #0e1117 0%, #171b26 100%);
+    background: linear-gradient(160deg, #0a0e17 0%, #111827 50%, #0f172a 100%);
 }
 
-/* Sidebar Metin Okunabilirliği */
+/* ===== SIDEBAR ===== */
 [data-testid="stSidebar"] {
-    background: rgba(26, 29, 41, 0.9) !important;
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(15, 23, 42, 0.95) !important;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
 [data-testid="stSidebar"] label,
 [data-testid="stSidebar"] .stRadio label {
-    color: #e2e8f0 !important;
+    color: #cbd5e1 !important;
     font-weight: 500 !important;
-    opacity: 1 !important;
 }
 
-/* Başlık stilleri - Gradient yerine düz beyaz/gri (daha okunaklı) */
-h1,
-h2,
-h3 {
+/* ===== BAŞLIKLAR ===== */
+h1, h2, h3 {
     font-weight: 700;
     letter-spacing: -0.02em;
-    color: #ffffff !important;
-    -webkit-text-fill-color: initial !important;
-    background: none !important;
-    margin-bottom: 1rem;
+    color: #f1f5f9 !important;
 }
 
-/* Metrik kartları kaplaması */
+h1 { font-size: 1.8rem; }
+h2 { font-size: 1.4rem; }
+h3 { font-size: 1.15rem; }
+
+/* ===== METRİK KARTLARI ===== */
 [data-testid="stMetric"] {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 1.25rem;
+    transition: all 0.2s ease;
+}
+
+[data-testid="stMetric"]:hover {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 75, 75, 0.3);
+    transform: translateY(-1px);
 }
 
 [data-testid="stMetricValue"] {
-    font-size: 2.5rem;
+    font-size: 2rem;
     font-weight: 800;
     color: #FF4B4B !important;
 }
 
-/* Premium Butonlar */
-.stButton>button {
-    background: linear-gradient(135deg, #FF4B4B 0%, #d63031 100%);
+[data-testid="stMetricLabel"] {
+    color: #94a3b8 !important;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+/* ===== BUTONLAR ===== */
+.stButton > button {
+    background: linear-gradient(135deg, #FF4B4B 0%, #dc2626 100%);
     color: #ffffff !important;
     border: none !important;
     border-radius: 10px;
     font-weight: 600;
-    box-shadow: 0 4px 15px rgba(255, 75, 75, 0.3);
+    font-size: 0.9rem;
+    padding: 0.5rem 1.25rem;
+    box-shadow: 0 4px 15px rgba(255, 75, 75, 0.25);
+    transition: all 0.2s ease;
 }
 
-/* Form elemanları metin rengi */
-input,
-select,
-textarea {
-    color: #ffffff !important;
+.stButton > button:hover {
+    box-shadow: 0 6px 25px rgba(255, 75, 75, 0.4);
+    transform: translateY(-1px);
 }
 
-/* Tablo container */
-[data-testid="stDataFrame"] {
-    background: rgba(30, 34, 45, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+.stButton > button:active {
+    transform: translateY(0);
+}
+
+/* Secondary buttons (download etc.) */
+.stDownloadButton > button {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    color: #e2e8f0 !important;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.stDownloadButton > button:hover {
+    background: linear-gradient(135deg, #334155 0%, #475569 100%) !important;
+    border-color: rgba(255, 75, 75, 0.4) !important;
+}
+
+/* ===== FORM ELEMANLARI ===== */
+input, select, textarea,
+[data-testid="stTextInput"] input,
+[data-testid="stTextArea"] textarea {
+    color: #e2e8f0 !important;
+    background: rgba(15, 23, 42, 0.8) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 8px !important;
+}
+
+input:focus, textarea:focus {
+    border-color: rgba(255, 75, 75, 0.5) !important;
+    box-shadow: 0 0 0 2px rgba(255, 75, 75, 0.15) !important;
+}
+
+/* ===== SEKMELER ===== */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.03);
     border-radius: 12px;
+    padding: 4px;
 }
 
-/* Oynatıcı Container Alanı */
+.stTabs [data-baseweb="tab"] {
+    border-radius: 8px;
+    color: #94a3b8 !important;
+    font-weight: 600;
+    padding: 8px 16px;
+    transition: all 0.2s ease;
+}
+
+.stTabs [aria-selected="true"] {
+    background: rgba(255, 75, 75, 0.15) !important;
+    color: #FF4B4B !important;
+}
+
+/* ===== TABLO ===== */
+[data-testid="stDataFrame"] {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+/* ===== OYNATICI ===== */
 [data-testid="stHtml"] {
     border-radius: 12px;
     overflow: hidden;
     background: #000;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
-/* Footer modernizasyon */
+/* ===== CHARTS ===== */
+[data-testid="stVegaLiteChart"],
+[data-testid="stArrowVegaLiteChart"] {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 1rem;
+}
+
+/* ===== ALERT / INFO BOXES ===== */
+[data-testid="stAlert"] {
+    border-radius: 10px;
+    border-left-width: 4px;
+}
+
+/* ===== EXPANDER ===== */
+[data-testid="stExpander"] {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+}
+
+/* ===== PROGRESS BAR ===== */
+.stProgress > div > div {
+    background: linear-gradient(90deg, #FF4B4B, #f97316) !important;
+    border-radius: 8px;
+}
+
+/* ===== SELECTBOX ===== */
+[data-testid="stSelectbox"] > div > div {
+    background: rgba(15, 23, 42, 0.8) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 8px !important;
+}
+
+/* ===== MULTISELECT ===== */
+[data-testid="stMultiSelect"] > div > div {
+    background: rgba(15, 23, 42, 0.8) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 8px !important;
+}
+
+/* ===== CHECKBOX ===== */
+[data-testid="stCheckbox"] label span {
+    color: #cbd5e1 !important;
+}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+/* ===== FOOTER ===== */
 .footer {
     text-align: center;
     padding: 2.5rem;
     margin-top: 4rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    color: #888;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    color: #64748b;
+}
+
+/* ===== ANİMASYONLAR ===== */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+    animation: fadeIn 0.4s ease-out;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+    [data-testid="stMetric"] {
+        padding: 0.75rem;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.5rem;
+    }
+    h1 { font-size: 1.4rem; }
 }

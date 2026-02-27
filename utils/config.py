@@ -61,3 +61,22 @@ CACHE_TTL = 300
 
 # Maksimum dosya boyutu (MB, dosya yükleme için)
 MAX_FILE_SIZE_MB = 50
+
+# === URL SAĞLIK KONTROLÜ ===
+
+# Paralel kontrol için maksimum iş parçacığı sayısı
+HEALTH_CHECK_MAX_WORKERS = 10
+
+# Sağlık kontrolü zaman aşımı (saniye)
+HEALTH_CHECK_TIMEOUT = 5
+
+# Varsayılan kontrol edilecek maksimum kanal sayısı
+HEALTH_CHECK_MAX_CHANNELS = 50
+
+# === FAVORİ & GEÇMİŞ ===
+
+# Geçmişte tutulacak maksimum kayıt sayısı
+MAX_HISTORY_ENTRIES = 100
+
+# === UYGULAMA VERSİYONU ===
+APP_VERSION = "2.0.0"

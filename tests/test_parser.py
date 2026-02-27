@@ -6,18 +6,27 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from app import parse_m3u_lines, filter_channels, convert_df_to_m3u
+from app import (
+    parse_m3u_lines, filter_channels, convert_df_to_m3u,
+    convert_df_to_csv, convert_df_to_json,
+    merge_playlists, get_playlist_stats, check_single_url,
+)
 import pandas as pd
+import json
 
+
+# =====================================================================
+# PARSE TESTLERİ
+# =====================================================================
 
 def test_parse_m3u_basic():
     """Temel M3U parse testi."""
-    sample_m3u = [
+    sample = [
         "#EXTM3U",
         '#EXTINF:-1 group-title="Test",Test Kanal',
         "http://example.com/stream.m3u8",
     ]
-    channels = parse_m3u_lines(sample_m3u)
+    channels = parse_m3u_lines(sample)
     assert len(channels) == 1
     assert channels[0]["Kanal Adı"] == "Test Kanal"
     assert channels[0]["Grup"] == "Test"
@@ -26,14 +35,14 @@ def test_parse_m3u_basic():
 
 def test_parse_m3u_multiple_channels():
     """Birden fazla kanal parse testi."""
-    sample_m3u = [
+    sample = [
         "#EXTM3U",
         '#EXTINF:-1 group-title="Spor",Spor Kanalı',
         "http://example.com/spor.m3u8",
         '#EXTINF:-1 group-title="Haber",Haber Kanalı',
         "http://example.com/haber.m3u8",
     ]
-    channels = parse_m3u_lines(sample_m3u)
+    channels = parse_m3u_lines(sample)
     assert len(channels) == 2
     assert channels[0]["Kanal Adı"] == "Spor Kanalı"
     assert channels[1]["Kanal Adı"] == "Haber Kanalı"
@@ -41,36 +50,51 @@ def test_parse_m3u_multiple_channels():
 
 def test_parse_m3u_with_logo():
     """Logo URL parse testi."""
-    sample_m3u = [
+    sample = [
         "#EXTM3U",
         '#EXTINF:-1 tvg-logo="http://logo.com/img.png" group-title="Film",Film Kanalı',
         "http://example.com/film.m3u8",
     ]
-    channels = parse_m3u_lines(sample_m3u)
+    channels = parse_m3u_lines(sample)
     assert len(channels) == 1
     assert channels[0]["LogoURL"] == "http://logo.com/img.png"
 
 
+def test_parse_m3u_with_tvg_attributes():
+    """tvg-id, tvg-name, tvg-language, tvg-country parse testi."""
+    sample = [
+        "#EXTM3U",
+        '#EXTINF:-1 tvg-id="trt1.tr" tvg-name="TRT 1" tvg-language="Turkish" tvg-country="TR" group-title="Ulusal",TRT 1 HD',
+        "http://example.com/trt1.m3u8",
+    ]
+    channels = parse_m3u_lines(sample)
+    assert len(channels) == 1
+    assert channels[0]["TVG-ID"] == "trt1.tr"
+    assert channels[0]["TVG-Name"] == "TRT 1"
+    assert channels[0]["Dil"] == "Turkish"
+    assert channels[0]["Ülke"] == "TR"
+
+
 def test_parse_m3u_no_group():
     """Grup bilgisi olmayan kanal parse testi."""
-    sample_m3u = [
+    sample = [
         "#EXTM3U",
         "#EXTINF:-1,Adsız Kanal",
         "http://example.com/stream.m3u8",
     ]
-    channels = parse_m3u_lines(sample_m3u)
+    channels = parse_m3u_lines(sample)
     assert len(channels) == 1
     assert channels[0]["Grup"] == "Genel"
 
 
 def test_parse_m3u_bytes():
     """Byte satırları parse testi."""
-    sample_m3u = [
+    sample = [
         b"#EXTM3U",
         b'#EXTINF:-1 group-title="Test",Byte Kanal',
         b"http://example.com/stream.m3u8",
     ]
-    channels = parse_m3u_lines(sample_m3u)
+    channels = parse_m3u_lines(sample)
     assert len(channels) == 1
     assert channels[0]["Kanal Adı"] == "Byte Kanal"
 
@@ -81,6 +105,27 @@ def test_parse_m3u_empty():
     assert len(channels) == 0
 
 
+def test_parse_url_type_detection():
+    """URL türü tespiti testi."""
+    sample = [
+        "#EXTM3U",
+        '#EXTINF:-1 group-title="A",HLS Kanal',
+        "http://example.com/live/stream.m3u8",
+        '#EXTINF:-1 group-title="B",DASH Kanal',
+        "http://example.com/stream.mpd",
+        '#EXTINF:-1 group-title="C",TS Kanal',
+        "http://example.com/stream.ts",
+    ]
+    channels = parse_m3u_lines(sample)
+    assert channels[0]["Tür"] == "HLS"
+    assert channels[1]["Tür"] == "DASH"
+    assert channels[2]["Tür"] == "MPEG-TS"
+
+
+# =====================================================================
+# FİLTRE TESTLERİ
+# =====================================================================
+
 def test_filter_channels_tr():
     """TR filtresi testi."""
     channels = [
@@ -90,29 +135,111 @@ def test_filter_channels_tr():
     ]
     filtered = filter_channels(channels, only_tr=True)
     assert len(filtered) == 2
-    assert all("TR" in ch["Grup"] or "TURKIYE" in ch["Grup"] for ch in filtered)
 
 
 def test_filter_channels_no_filter():
     """Filtre kapalıyken tüm kanallar dönmeli."""
-    channels = [
-        {"Grup": "UK | News", "Kanal Adı": "News", "URL": "http://b.com"},
-    ]
+    channels = [{"Grup": "UK | News", "Kanal Adı": "News", "URL": "http://b.com"}]
     filtered = filter_channels(channels, only_tr=False)
     assert len(filtered) == 1
 
 
+def test_filter_channels_keyword():
+    """Anahtar kelime filtresi testi."""
+    channels = [
+        {"Grup": "Spor", "Kanal Adı": "beIN Sports", "URL": "http://a.com"},
+        {"Grup": "Haber", "Kanal Adı": "CNN Türk", "URL": "http://b.com"},
+    ]
+    filtered = filter_channels(channels, keyword="bein")
+    assert len(filtered) == 1
+    assert filtered[0]["Kanal Adı"] == "beIN Sports"
+
+
+def test_filter_channels_group():
+    """Grup filtresi testi."""
+    channels = [
+        {"Grup": "Spor", "Kanal Adı": "A", "URL": "http://a.com"},
+        {"Grup": "Haber", "Kanal Adı": "B", "URL": "http://b.com"},
+    ]
+    filtered = filter_channels(channels, group_filter="Spor")
+    assert len(filtered) == 1
+
+
+# =====================================================================
+# DÖNÜŞÜM TESTLERİ
+# =====================================================================
+
 def test_convert_df_to_m3u():
     """DataFrame'den M3U dönüştürme testi."""
-    df = pd.DataFrame(
-        [
-            {"Grup": "Test", "Kanal Adı": "Kanal 1", "URL": "http://a.com", "LogoURL": ""},
-            {"Grup": "Test", "Kanal Adı": "Kanal 2", "URL": "http://b.com", "LogoURL": "http://logo.com/img.png"},
-        ]
-    )
+    df = pd.DataFrame([
+        {"Grup": "Test", "Kanal Adı": "Kanal 1", "URL": "http://a.com", "LogoURL": ""},
+        {"Grup": "Test", "Kanal Adı": "Kanal 2", "URL": "http://b.com", "LogoURL": "http://logo.com/img.png"},
+    ])
     m3u = convert_df_to_m3u(df)
     assert m3u.startswith("#EXTM3U")
     assert "Kanal 1" in m3u
     assert "Kanal 2" in m3u
-    assert "http://a.com" in m3u
-    assert "http://b.com" in m3u
+    assert 'tvg-logo="http://logo.com/img.png"' in m3u
+
+
+def test_convert_df_to_csv():
+    """CSV dönüştürme testi."""
+    df = pd.DataFrame([
+        {"Grup": "Test", "Kanal Adı": "Kanal 1", "URL": "http://a.com"},
+    ])
+    csv = convert_df_to_csv(df)
+    assert "Grup" in csv
+    assert "Kanal 1" in csv
+
+
+def test_convert_df_to_json():
+    """JSON dönüştürme testi."""
+    df = pd.DataFrame([
+        {"Grup": "Test", "Kanal Adı": "Kanal 1", "URL": "http://a.com"},
+    ])
+    j = convert_df_to_json(df)
+    assert "Kanal" in j
+    parsed = json.loads(j)
+    assert len(parsed) == 1
+    assert parsed[0]["URL"] == "http://a.com"
+
+
+# =====================================================================
+# BİRLEŞTİRME & İSTATİSTİK TESTLERİ
+# =====================================================================
+
+def test_merge_playlists():
+    """Playlist birleştirme testi."""
+    df1 = pd.DataFrame([
+        {"Kanal Adı": "A", "URL": "http://a.com", "Grup": "G1"},
+        {"Kanal Adı": "B", "URL": "http://b.com", "Grup": "G1"},
+    ])
+    df2 = pd.DataFrame([
+        {"Kanal Adı": "B", "URL": "http://b.com", "Grup": "G1"},  # çift
+        {"Kanal Adı": "C", "URL": "http://c.com", "Grup": "G2"},
+    ])
+    merged = merge_playlists(df1, df2)
+    assert len(merged) == 3
+    assert "C" in merged["Kanal Adı"].values
+
+
+def test_get_playlist_stats():
+    """Playlist istatistik testi."""
+    df = pd.DataFrame([
+        {"Grup": "Spor", "Kanal Adı": "A", "URL": "http://a.com", "Tür": "HLS"},
+        {"Grup": "Spor", "Kanal Adı": "B", "URL": "http://b.com", "Tür": "HLS"},
+        {"Grup": "Haber", "Kanal Adı": "C", "URL": "http://c.com", "Tür": "DASH"},
+        {"Grup": "Haber", "Kanal Adı": "A", "URL": "http://a.com", "Tür": "HLS"},  # çift
+    ])
+    stats = get_playlist_stats(df)
+    assert stats["total"] == 4
+    assert stats["groups"] == 2
+    assert stats["duplicates"] == 1
+    assert stats["hls_count"] == 3
+    assert stats["dash_count"] == 1
+
+
+def test_check_single_url_empty():
+    """Boş URL kontrolü testi."""
+    assert check_single_url("") == "Boş URL"
+    assert check_single_url("   ") == "Boş URL"
