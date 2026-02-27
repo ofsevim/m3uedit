@@ -99,7 +99,7 @@ pass
 
 # Özel CSS yükle
 try:
-    with open('static/styles.css') as f:
+    with open('static/styles.css', encoding='utf-8') as f:
         st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
 except Exception as e:
     logger.warning(f"Could not load custom CSS: {e}")
@@ -302,11 +302,20 @@ with st.sidebar:
         # Basit sıralama seçeneği
         sort_by = st.sidebar.selectbox("Sırala", ["Grup", "Kanal Adı", "URL"] , index=0)
         sort_dir = st.sidebar.radio("Yön", ["A → Z", "Z → A"], index=0)
-        if sort_by and not st.session_state.data.empty:
-            st.session_state.data = st.session_state.data.sort_values(by=sort_by, ascending=(sort_dir=="A → Z"))
+        
+        # Sadece seçim değiştiyse sırala (Performans için)
+        sort_key = f"{sort_by}_{sort_dir}"
+        if st.session_state.get('last_sort') != sort_key:
+            st.session_state.data = st.session_state.data.sort_values(
+                by=sort_by, 
+                ascending=(sort_dir=="A → Z")
+            ).reset_index(drop=True)
+            st.session_state.last_sort = sort_key
+            
         try:
             group_options = sorted(st.session_state.data["Grup"].astype(str).dropna().unique())
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error getting group options: {e}")
             group_options = []
         if group_options:
             selected_groups = st.multiselect("Grupları filtrele", group_options, default=group_options)
@@ -517,12 +526,12 @@ if not st.session_state.data.empty:
         key="editor"
     )
 
-    # Note: data_editor automatically updates its internal state. 
-    # If we need to persist edits back to master data:
-    if "editor" in st.session_state and st.session_state.editor.get("edited_rows"):
-        # We could implement a more complex update logic here if needed,
-        # but for now, let's keep it simple to avoid loops.
-        pass
+    # Note: data_editor updates st.session_state.editor automatically.
+    # We only update the master data if significant changes happen.
+    if edited_df is not None and not edited_df.equals(df_display):
+        # Master data'yı sessizce güncelle (rerun yapmadan bir sonraki döngüde yansır)
+        # Bu yaklaşım beyaz ekran riskini (infinite rerun) azaltır.
+        st.session_state.data.update(edited_df)
 
 else:
     st.info("👈 Başlamak için sol menüden bir link yapıştırın veya dosya yükleyin.")
