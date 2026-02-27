@@ -27,9 +27,6 @@ setup(
     ],
     python_requires=">=3.11",
     install_requires=requirements,
-    entry_points={
-        "console_scripts": [
-            "m3uedit=src.app:main",
-        ],
-    },
+    # Not: Streamlit uygulaması olduğu için console_scripts kullanılmaz.
+    # Çalıştırmak için: streamlit run app.py
 )
