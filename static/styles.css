@@ -5,51 +5,52 @@
 
 /* Tüm Uygulama Tipografisi */
 html,
-body {
+body,
+[data-testid="stAppViewContainer"] {
     font-family: 'Inter', sans-serif !important;
+    color: #ffffff !important;
 }
 
 /* Ana container arka plan gradient */
 .stApp {
     background: linear-gradient(135deg, #0e1117 0%, #171b26 100%);
-    color: #e2e8f0;
 }
 
-/* Sidebar Glassmorphism */
+/* Sidebar Metin Okunabilirliği */
 [data-testid="stSidebar"] {
-    background: rgba(26, 29, 41, 0.6) !important;
+    background: rgba(26, 29, 41, 0.9) !important;
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border-right: 1px solid rgba(255, 255, 255, 0.05);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Başlık stilleri */
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] .stRadio label {
+    color: #e2e8f0 !important;
+    font-weight: 500 !important;
+    opacity: 1 !important;
+}
+
+/* Başlık stilleri - Gradient yerine düz beyaz/gri (daha okunaklı) */
 h1,
 h2,
 h3 {
     font-weight: 700;
     letter-spacing: -0.02em;
-    background: linear-gradient(90deg, #ffffff, #a0aec0);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: #ffffff !important;
+    -webkit-text-fill-color: initial !important;
+    background: none !important;
     margin-bottom: 1rem;
 }
 
 /* Metrik kartları kaplaması */
 [data-testid="stMetric"] {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 12px;
     padding: 1.5rem;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease;
-}
-
-[data-testid="stMetric"]:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 30px rgba(255, 75, 75, 0.15);
-    border-color: rgba(255, 75, 75, 0.3);
 }
 
 [data-testid="stMetricValue"] {
@@ -61,75 +62,33 @@ h3 {
 /* Premium Butonlar */
 .stButton>button {
     background: linear-gradient(135deg, #FF4B4B 0%, #d63031 100%);
-    color: #fff !important;
+    color: #ffffff !important;
     border: none !important;
     border-radius: 10px;
     font-weight: 600;
-    letter-spacing: 0.5px;
-    padding: 0.6rem 1.5rem;
-    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     box-shadow: 0 4px 15px rgba(255, 75, 75, 0.3);
 }
 
-.stButton>button:hover {
-    transform: translateY(-3px) scale(1.02);
-    box-shadow: 0 8px 25px rgba(255, 75, 75, 0.5);
-    background: linear-gradient(135deg, #ff6b6b 0%, #e84141 100%);
-}
-
-.stButton>button:active {
-    transform: translateY(1px);
+/* Form elemanları metin rengi */
+input,
+select,
+textarea {
+    color: #ffffff !important;
 }
 
 /* Tablo container */
 [data-testid="stDataFrame"] {
-    background: rgba(30, 34, 45, 0.5);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(30, 34, 45, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+}
+
+/* Oynatıcı Container Alanı */
+[data-testid="stHtml"] {
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-}
-
-/* Input alanları */
-.stTextInput>div>div>input,
-.stSelectbox>div>div,
-.stMultiSelect>div>div {
-    background-color: rgba(20, 24, 33, 0.8) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 10px;
-    color: #fff !important;
-    transition: all 0.3s ease;
-}
-
-.stTextInput>div>div>input:focus,
-.stSelectbox>div>div:focus-within {
-    border-color: #FF4B4B !important;
-    box-shadow: 0 0 0 2px rgba(255, 75, 75, 0.2) !important;
-}
-
-/* Bildirim Kutuları (Başarı, Uyarı, Hata, Bilgi) */
-.stSuccess,
-.stWarning,
-.stError,
-.stInfo {
-    border-radius: 12px;
-    padding: 1.2rem;
-    backdrop-filter: blur(8px);
+    background: #000;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    animation: fadeIn 0.5s ease-out;
-}
-
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
 }
 
 /* Footer modernizasyon */
@@ -137,19 +96,6 @@ h3 {
     text-align: center;
     padding: 2.5rem;
     margin-top: 4rem;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.4), transparent);
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-/* File uploader hover state */
-[data-testid="stFileUploader"] {
-    border: 2px dashed rgba(255, 255, 255, 0.2);
-    border-radius: 12px;
-    transition: all 0.3s ease;
-    background: rgba(20, 24, 33, 0.5);
-}
-
-[data-testid="stFileUploader"]:hover {
-    border-color: #FF4B4B;
-    background: rgba(20, 24, 33, 0.8);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    color: #888;
 }
