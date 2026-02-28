@@ -236,28 +236,19 @@ with st.sidebar:
     st.markdown("---")
 
     url = st.text_input("🌐 M3U Linki Yapıştır:")
+    uploaded_file = st.file_uploader("📂 veya M3U Dosyası Yükle", type=["m3u", "m3u8"])
     only_tr = st.checkbox("🇹🇷 Sadece TR Kanalları", value=DEFAULT_TR_FILTER)
 
     if st.button("🚀 Listeyi Çek ve Tara", use_container_width=True, type="primary"):
+        source_lines = None
         if url:
             try:
-                with st.spinner("Link indiriliyor ve taranıyor..."):
+                with st.spinner("Link indiriliyor..."):
                     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
                     ctx = _create_ssl_context()
                     start = time.time()
                     with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT, context=ctx) as resp:
-                        raw = parse_m3u_lines(resp)
-                        filtered = filter_channels(raw, only_tr)
-                        elapsed = round(time.time() - start, 2)
-                        if filtered:
-                            df = pd.DataFrame(filtered)
-                            for col, default in [("LogoURL", ""), ("Tür", "")]:
-                                if col not in df.columns:
-                                    df[col] = default
-                            st.session_state.data = df
-                            st.success(f"✅ {len(filtered)} kanal bulundu ({elapsed}s)")
-                        else:
-                            st.warning("⚠️ Kanal bulunamadı.")
+                        source_lines = resp.readlines()
             except urllib.error.HTTPError as e:
                 st.error(f"🚫 HTTP Hatası: {e.code}")
             except urllib.error.URLError as e:
@@ -267,8 +258,25 @@ with st.sidebar:
             except Exception as e:
                 logger.error("Yükleme hatası", exc_info=True)
                 st.error(f"❌ Hata: {e}")
+        elif uploaded_file:
+            source_lines = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors="ignore")).readlines()
         else:
-            st.warning("Lütfen bir link girin.")
+            st.warning("Lütfen bir link girin veya dosya yükleyin.")
+
+        if source_lines:
+            start = time.time() if "start" not in dir() else start
+            raw = parse_m3u_lines(source_lines)
+            filtered = filter_channels(raw, only_tr)
+            elapsed = round(time.time() - start, 2)
+            if filtered:
+                df = pd.DataFrame(filtered)
+                for col, default in [("LogoURL", ""), ("Tür", "")]:
+                    if col not in df.columns:
+                        df[col] = default
+                st.session_state.data = df
+                st.success(f"✅ {len(filtered)} kanal bulundu ({elapsed}s)")
+            else:
+                st.warning("⚠️ Kanal bulunamadı.")
 
     st.markdown("---")
 
