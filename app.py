@@ -287,7 +287,7 @@ with st.sidebar:
         except Exception:
             group_options = []
         if group_options:
-            selected_groups = st.multiselect("Grupları filtrele", group_options, default=group_options)
+            selected_groups = st.multiselect("Grupları filtrele", group_options, default=None, key="group_filter")
 
         st.markdown("---")
         st.markdown("#### 💾 Dışa Aktar")
@@ -391,7 +391,7 @@ if not st.session_state.data.empty:
         df_display[display_cols] if display_cols else df_display,
         use_container_width=True, hide_index=True, height=TABLE_HEIGHT,
         column_config={
-            "URL": st.column_config.LinkColumn("URL", width="large"),
+            "URL": st.column_config.TextColumn("URL", width="large"),
             "Tür": st.column_config.TextColumn("Tür", width="small"),
         },
     )
