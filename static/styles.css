@@ -238,29 +238,115 @@ input:focus, textarea:focus {
     border-radius: 8px;
 }
 
-/* ===== SELECTBOX ===== */
-[data-testid="stSelectbox"] > div > div {
-    background: rgba(15, 23, 42, 0.8) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 8px !important;
-    color: #e2e8f0 !important;
-}
+/* ===== SELECTBOX — KAPSAMLI DARK MODE ===== */
 
-/* Selectbox dropdown metin */
-[data-testid="stSelectbox"] span,
-[data-testid="stSelectbox"] div[data-baseweb="select"] span {
-    color: #e2e8f0 !important;
-}
-
-/* ===== MULTISELECT ===== */
-[data-testid="stMultiSelect"] > div > div {
+/* Selectbox konteyner (kapalı hali) */
+[data-testid="stSelectbox"] [data-baseweb="select"] > div {
     background: rgba(15, 23, 42, 0.8) !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
     border-radius: 8px !important;
 }
 
-[data-testid="stMultiSelect"] span {
+/* Seçili değer metni */
+[data-testid="stSelectbox"] [data-baseweb="select"] span,
+[data-testid="stSelectbox"] [data-baseweb="select"] div[role="combobox"],
+[data-testid="stSelectbox"] [data-baseweb="select"] input {
     color: #e2e8f0 !important;
+}
+
+/* Placeholder metni */
+[data-testid="stSelectbox"] [data-baseweb="select"] [data-baseweb="select-placeholder"],
+[data-testid="stSelectbox"] [data-baseweb="select"] div[aria-selected="false"] {
+    color: #64748b !important;
+}
+
+/* Ok ikonu (chevron) */
+[data-testid="stSelectbox"] [data-baseweb="select"] svg {
+    fill: #94a3b8 !important;
+    color: #94a3b8 !important;
+}
+
+/* Açılan dropdown listesi (popover) */
+[data-baseweb="popover"] {
+    background: #1e293b !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
+}
+
+[data-baseweb="popover"] ul {
+    background: #1e293b !important;
+}
+
+/* Dropdown liste öğeleri */
+[data-baseweb="popover"] li,
+[data-baseweb="popover"] [role="option"],
+[data-baseweb="menu"] li,
+[data-baseweb="menu"] [role="option"] {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+}
+
+/* Dropdown hover */
+[data-baseweb="popover"] li:hover,
+[data-baseweb="popover"] [role="option"]:hover,
+[data-baseweb="popover"] li[aria-selected="true"],
+[data-baseweb="menu"] li:hover,
+[data-baseweb="menu"] [role="option"]:hover {
+    background: rgba(255, 75, 75, 0.15) !important;
+    color: #FF4B4B !important;
+}
+
+/* Dropdown aktif/seçili öğe */
+[data-baseweb="popover"] li[aria-selected="true"],
+[data-baseweb="menu"] li[aria-selected="true"] {
+    background: rgba(255, 75, 75, 0.2) !important;
+    color: #FF4B4B !important;
+}
+
+/* Dropdown arama kutusu (varsa) */
+[data-baseweb="popover"] input {
+    background: rgba(15, 23, 42, 0.9) !important;
+    color: #e2e8f0 !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Dropdown boş durum mesajı */
+[data-baseweb="popover"] [role="option"][aria-disabled="true"],
+[data-baseweb="menu"] [role="option"][aria-disabled="true"] {
+    color: #64748b !important;
+}
+
+/* Focus durumu */
+[data-testid="stSelectbox"] [data-baseweb="select"] > div:focus-within {
+    border-color: rgba(255, 75, 75, 0.5) !important;
+    box-shadow: 0 0 0 2px rgba(255, 75, 75, 0.15) !important;
+}
+
+/* ===== MULTISELECT — KAPSAMLI DARK MODE ===== */
+
+/* Multiselect konteyner */
+[data-testid="stMultiSelect"] [data-baseweb="select"] > div {
+    background: rgba(15, 23, 42, 0.8) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 8px !important;
+}
+
+/* Multiselect metin */
+[data-testid="stMultiSelect"] [data-baseweb="select"] span,
+[data-testid="stMultiSelect"] [data-baseweb="select"] input {
+    color: #e2e8f0 !important;
+}
+
+/* Multiselect placeholder */
+[data-testid="stMultiSelect"] [data-baseweb="select"] [data-baseweb="select-placeholder"] {
+    color: #64748b !important;
+}
+
+/* Multiselect ok ikonu */
+[data-testid="stMultiSelect"] [data-baseweb="select"] svg {
+    fill: #94a3b8 !important;
+    color: #94a3b8 !important;
 }
 
 /* Multiselect tag'ler */
@@ -271,6 +357,17 @@ input:focus, textarea:focus {
 
 [data-testid="stMultiSelect"] [data-baseweb="tag"] span {
     color: #f1f5f9 !important;
+}
+
+/* Multiselect tag silme ikonu */
+[data-testid="stMultiSelect"] [data-baseweb="tag"] svg {
+    fill: #f1f5f9 !important;
+}
+
+/* Multiselect focus */
+[data-testid="stMultiSelect"] [data-baseweb="select"] > div:focus-within {
+    border-color: rgba(255, 75, 75, 0.5) !important;
+    box-shadow: 0 0 0 2px rgba(255, 75, 75, 0.15) !important;
 }
 
 /* ===== CHECKBOX ===== */
