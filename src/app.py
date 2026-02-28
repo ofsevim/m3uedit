@@ -168,68 +168,100 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
     url = (stream_url or "").replace("'", "\\'").replace('"', '\\"')
     h = str(height)
     return f"""
-    <div style='width:100%;height:{h}px;background:#000;border-radius:12px;overflow:hidden;position:relative;'>
+    <div id='player_wrap' style='width:100%;height:{h}px;background:#000;border-radius:12px;overflow:hidden;position:relative;'>
         <video id='m3u_player' controls autoplay playsinline
                style='width:100%;height:100%;object-fit:contain;'></video>
-        <div id='error_msg' style='display:none;color:#fff;padding:20px;text-align:center;
-             position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);'>
-            <p style='font-size:1.2rem;'>⚠️ Video yüklenemedi</p>
-            <p style='font-size:0.85rem;color:#aaa;'>URL geçerli olmayabilir veya CORS hatası olabilir.</p>
+        <div id='status_msg' style='display:none;color:#fff;padding:20px;text-align:center;
+             position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:85%;'>
         </div>
         <div id='loading_indicator' style='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-             color:#fff;font-size:1.5rem;'>⏳ Yükleniyor...</div>
+             color:#fff;font-size:1.3rem;'>⏳ Yükleniyor...</div>
     </div>
     <script src='https://cdn.jsdelivr.net/npm/hls.js@latest'></script>
     <script src='https://cdn.jsdelivr.net/npm/mpegts.js@latest/dist/mpegts.js'></script>
     <script>
     (function(){{
         var video = document.getElementById('m3u_player');
-        var errorDiv = document.getElementById('error_msg');
+        var statusDiv = document.getElementById('status_msg');
         var loadDiv = document.getElementById('loading_indicator');
-        var url = '{url}';
-        function showError(){{ errorDiv.style.display='block'; video.style.display='none'; loadDiv.style.display='none'; }}
-        function hideLoading(){{ loadDiv.style.display='none'; }}
-        if (!url) {{ showError(); return; }}
+        var origUrl = '{url}';
+        var proxyPrefixes = [
+            '',
+            'https://corsproxy.io/?',
+            'https://api.allorigins.win/raw?url='
+        ];
+        var attempt = 0;
+        var succeeded = false;
 
-        var isTS = url.toLowerCase().indexOf('.ts') !== -1;
-        var isHLS = url.toLowerCase().indexOf('.m3u8') !== -1 || url.toLowerCase().indexOf('/live/') !== -1;
-
-        if (isTS && typeof mpegts !== 'undefined' && mpegts.isSupported()) {{
-            var player = mpegts.createPlayer({{
-                type: 'mpegts',
-                url: url,
-                isLive: true
-            }}, {{
-                enableWorker: true,
-                liveBufferLatencyChasing: true,
-                liveSync: true
-            }});
-            player.attachMediaElement(video);
-            player.load();
-            player.play().catch(function(){{}});
-            player.on(mpegts.Events.ERROR, function(){{ showError(); }});
-            video.addEventListener('canplay', function(){{ hideLoading(); }});
-        }} else if (isHLS && typeof Hls !== 'undefined' && Hls.isSupported()) {{
-            var hls = new Hls({{enableWorker:true,lowLatencyMode:true,backBufferLength:90}});
-            hls.loadSource(url); hls.attachMedia(video);
-            hls.on(Hls.Events.MANIFEST_PARSED, function(){{ hideLoading(); video.play().catch(function(){{}}); }});
-            hls.on(Hls.Events.ERROR, function(event,data){{
-                if(data.fatal){{
-                    if(data.type===Hls.ErrorTypes.NETWORK_ERROR){{ hls.startLoad(); }}
-                    else {{ showError(); }}
-                }}
-            }});
-        }} else if (video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('video/mp2t')) {{
-            video.src = url;
-            video.addEventListener('loadedmetadata', function(){{ hideLoading(); video.play().catch(function(){{}}); }});
-            video.addEventListener('error', function(){{ showError(); }});
-        }} else {{
-            showError();
+        function showFail(){{
+            statusDiv.innerHTML =
+                "<p style='font-size:1.1rem;margin:0 0 8px 0;'>⚠️ Tarayıcıda oynatılamıyor</p>"
+                + "<p style='font-size:0.82rem;color:#94a3b8;margin:0 0 14px 0;'>CORS kısıtlaması — harici oynatıcı kullanın:</p>"
+                + "<a href='vlc://{url}' style='display:inline-block;padding:8px 20px;background:#FF4B4B;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;margin:3px;'>▶ VLC</a>"
+                + "<a href='potplayer://{url}' style='display:inline-block;padding:8px 20px;background:#334155;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;margin:3px;'>▶ PotPlayer</a>"
+                + "<p style='margin:10px 0 0 0;'><button onclick=\\"navigator.clipboard.writeText('{url}');this.textContent='✅ Kopyalandı!'\\" "
+                + "style='padding:7px 18px;background:#1e293b;color:#e2e8f0;border:1px solid rgba(255,255,255,0.15);border-radius:8px;cursor:pointer;font-size:0.82rem;'>📋 URL Kopyala</button></p>";
+            statusDiv.style.display = 'block';
+            video.style.display = 'none';
+            loadDiv.style.display = 'none';
         }}
-        setTimeout(hideLoading, 10000);
+
+        function hideLoading(){{ loadDiv.style.display = 'none'; }}
+
+        function showRetry(){{
+            loadDiv.textContent = '🔄 CORS proxy deneniyor...';
+        }}
+
+        function tryPlay(streamUrl){{
+            var isTS = streamUrl.toLowerCase().indexOf('.ts') !== -1 || origUrl.toLowerCase().indexOf('.ts') !== -1;
+            var isHLS = streamUrl.toLowerCase().indexOf('.m3u8') !== -1 || origUrl.toLowerCase().indexOf('.m3u8') !== -1
+                        || origUrl.toLowerCase().indexOf('/live/') !== -1;
+
+            if (isTS && typeof mpegts !== 'undefined' && mpegts.isSupported()) {{
+                var p = mpegts.createPlayer({{type:'mpegts',url:streamUrl,isLive:true}},
+                    {{enableWorker:true,liveBufferLatencyChasing:true,liveSync:true}});
+                p.attachMediaElement(video);
+                p.load();
+                p.play().catch(function(){{}});
+                p.on(mpegts.Events.ERROR, function(){{ nextAttempt(); }});
+                video.addEventListener('canplay', function(){{ succeeded=true; hideLoading(); }});
+            }} else if ((isHLS || !isTS) && typeof Hls !== 'undefined' && Hls.isSupported()) {{
+                var hls = new Hls({{enableWorker:true,lowLatencyMode:true,backBufferLength:90}});
+                hls.loadSource(streamUrl);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, function(){{ succeeded=true; hideLoading(); video.play().catch(function(){{}}); }});
+                hls.on(Hls.Events.ERROR, function(ev,data){{
+                    if(data.fatal) nextAttempt();
+                }});
+            }} else if (video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('video/mp2t')) {{
+                video.src = streamUrl;
+                video.addEventListener('loadedmetadata', function(){{ succeeded=true; hideLoading(); video.play().catch(function(){{}}); }});
+                video.addEventListener('error', function(){{ nextAttempt(); }});
+            }} else {{
+                nextAttempt();
+            }}
+        }}
+
+        function nextAttempt(){{
+            if (succeeded) return;
+            attempt++;
+            if (attempt < proxyPrefixes.length) {{
+                showRetry();
+                video.src = '';
+                var proxyUrl = proxyPrefixes[attempt] + encodeURIComponent(origUrl);
+                setTimeout(function(){{ tryPlay(proxyUrl); }}, 300);
+            }} else {{
+                showFail();
+            }}
+        }}
+
+        if (!origUrl) {{ showFail(); return; }}
+        tryPlay(origUrl);
+        setTimeout(function(){{ if(!succeeded && attempt===0) nextAttempt(); }}, 6000);
     }})();
     </script>
     """
+
 
 
 
@@ -249,10 +281,9 @@ if "play_channel" not in st.session_state:
 
 with st.sidebar:
     st.markdown(
-        "<div style='text-align:center;padding:1rem 0;'>"
-        "<h1 style='margin:0;font-size:2.5rem;'>📺</h1>"
-        "<h2 style='margin:0.5rem 0 0 0;font-size:1.4rem;color:#f1f5f9;'>M3U Editör Pro</h2>"
-        "<p style='margin:0.25rem 0 0 0;color:#94a3b8;font-size:0.85rem;'>IPTV Kanal Filtresi & Oynatıcı</p>"
+        "<div style='text-align:center;padding:0.3rem 0;'>"
+        "<span style='font-size:1.2rem;'>📺</span> "
+        "<span style='font-size:0.95rem;font-weight:600;color:#f1f5f9;'>M3U Editör Pro</span>"
         "</div>",
         unsafe_allow_html=True,
     )
