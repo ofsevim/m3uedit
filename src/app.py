@@ -241,12 +241,12 @@ with st.sidebar:
 
     if st.button("🚀 Listeyi Çek ve Tara", use_container_width=True, type="primary"):
         source_lines = None
+        start = time.time()
         if url:
             try:
                 with st.spinner("Link indiriliyor..."):
                     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
                     ctx = _create_ssl_context()
-                    start = time.time()
                     with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT, context=ctx) as resp:
                         source_lines = resp.readlines()
             except urllib.error.HTTPError as e:
@@ -264,7 +264,6 @@ with st.sidebar:
             st.warning("Lütfen bir link girin veya dosya yükleyin.")
 
         if source_lines:
-            start = time.time() if "start" not in dir() else start
             raw = parse_m3u_lines(source_lines)
             filtered = filter_channels(raw, only_tr)
             elapsed = round(time.time() - start, 2)
