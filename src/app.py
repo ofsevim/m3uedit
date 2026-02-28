@@ -143,7 +143,7 @@ def create_m3u_link(m3u_content: str) -> str:
         data = urllib.parse.urlencode({
             "content": m3u_content,
             "syntax": "text",
-            "expiry_days": 7,
+            "expiry_days": 365,
         }).encode("utf-8")
         req = urllib.request.Request(
             "https://dpaste.org/api/",
@@ -297,7 +297,7 @@ with st.sidebar:
 
         st.markdown("---")
         st.markdown("#### 🔗 M3U Link Oluştur")
-        st.caption("Filtrelenmiş listeyi online M3U linki olarak paylaş (7 gün geçerli)")
+        st.caption("Filtrelenmiş listeyi online M3U linki olarak paylaş (365 gün geçerli)")
         if st.button("🔗 Link Oluştur", use_container_width=True):
             with st.spinner("Link oluşturuluyor..."):
                 link = create_m3u_link(m3u_out)
