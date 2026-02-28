@@ -473,8 +473,8 @@ with st.sidebar:
     st.markdown(
         "<div style='text-align:center;padding:1rem 0;'>"
         "<h1 style='margin:0;font-size:2.5rem;'>📺</h1>"
-        "<h2 style='margin:0.5rem 0 0 0;font-size:1.4rem;'>M3U Editör Pro</h2>"
-        "<p style='margin:0.25rem 0 0 0;color:#888;font-size:0.85rem;'>v2.0 — IPTV Yönetim Aracı</p>"
+        "<h2 style='margin:0.5rem 0 0 0;font-size:1.4rem;color:#f1f5f9;'>M3U Editör Pro</h2>"
+        "<p style='margin:0.25rem 0 0 0;color:#94a3b8;font-size:0.85rem;'>v2.0 — IPTV Yönetim Aracı</p>"
         "</div>",
         unsafe_allow_html=True,
     )
@@ -761,7 +761,7 @@ with tab_editor:
                         st.image(pc["logo"], width=120)
                     except Exception:
                         pass
-                st.markdown(f"**Grup:** {pc.get('group', 'N/A')}")
+                st.markdown(f"<span style='color:#94a3b8;'>Grup:</span> <span style='color:#f1f5f9;font-weight:600;'>{pc.get('group', 'N/A')}</span>", unsafe_allow_html=True)
             with pcol2:
                 st.markdown(f"### ▶ {pc['name']}")
                 components.html(render_live_player(pc["url"], height=380), height=420)
@@ -796,8 +796,8 @@ with tab_editor:
         st.markdown(
             "<div style='text-align:center;padding:80px 20px;'>"
             "<div style='font-size:4rem;margin-bottom:1rem;'>📺</div>"
-            "<h2 style='color:#ccc;'>M3U Editör Pro'ya Hoş Geldiniz</h2>"
-            "<p style='color:#888;font-size:1.1rem;max-width:500px;margin:1rem auto;'>"
+            "<h2 style='color:#f1f5f9;'>M3U Editör Pro'ya Hoş Geldiniz</h2>"
+            "<p style='color:#94a3b8;font-size:1.1rem;max-width:500px;margin:1rem auto;'>"
             "Sol menüden bir M3U linki yapıştırın, dosya yükleyin veya metin yapıştırarak başlayın.</p>"
             "</div>",
             unsafe_allow_html=True,
@@ -908,7 +908,7 @@ with tab_favorites:
         st.markdown(
             "<div style='text-align:center;padding:60px;'>"
             "<div style='font-size:3rem;'>⭐</div>"
-            "<p style='color:#888;margin-top:1rem;'>Henüz favori kanal yok.</p>"
+            "<p style='color:#94a3b8;margin-top:1rem;'>Henüz favori kanal yok.</p>"
             "</div>", unsafe_allow_html=True,
         )
 
@@ -1099,25 +1099,25 @@ except Exception:
     last_visit_str = "N/A"
 
 st.markdown(
-    f"<div style='text-align:center;padding:30px 20px;background:rgba(0,0,0,0.15);border-radius:12px;margin-top:40px;'>"
+    f"<div style='text-align:center;padding:30px 20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:12px;margin-top:40px;'>"
     f"<div style='margin-bottom:20px;'>"
-    f"<h3 style='margin:0 0 15px 0;color:#aaa;font-size:1.1rem;'>📊 Ziyaretçi İstatistikleri</h3>"
+    f"<h3 style='margin:0 0 15px 0;color:#94a3b8;font-size:1.1rem;'>📊 Ziyaretçi İstatistikleri</h3>"
     f"<div style='display:flex;justify-content:center;gap:40px;flex-wrap:wrap;'>"
-    f"<div style='text-align:center;'><div style='font-size:0.75rem;color:#888;'>🌟 Benzersiz</div>"
+    f"<div style='text-align:center;'><div style='font-size:0.75rem;color:#94a3b8;'>🌟 Benzersiz</div>"
     f"<div style='font-size:1.8rem;font-weight:bold;color:#FF4B4B;'>{stats['unique_visitors']}</div></div>"
-    f"<div style='text-align:center;'><div style='font-size:0.75rem;color:#888;'>📊 Toplam</div>"
+    f"<div style='text-align:center;'><div style='font-size:0.75rem;color:#94a3b8;'>📊 Toplam</div>"
     f"<div style='font-size:1.8rem;font-weight:bold;color:#FF4B4B;'>{stats['total_visits']}</div></div>"
-    f"<div style='text-align:center;'><div style='font-size:0.75rem;color:#888;'>📅 İlk</div>"
+    f"<div style='text-align:center;'><div style='font-size:0.75rem;color:#94a3b8;'>📅 İlk</div>"
     f"<div style='font-size:1rem;font-weight:bold;color:#FF4B4B;'>{first_visit_str}</div></div>"
-    f"<div style='text-align:center;'><div style='font-size:0.75rem;color:#888;'>🕒 Son</div>"
+    f"<div style='text-align:center;'><div style='font-size:0.75rem;color:#94a3b8;'>🕒 Son</div>"
     f"<div style='font-size:1rem;font-weight:bold;color:#FF4B4B;'>{last_visit_str}</div></div>"
     f"</div></div>"
-    f"<div style='border-top:1px solid rgba(255,255,255,0.1);padding-top:20px;margin-top:20px;'>"
-    f"<p style='margin:0;font-size:0.85rem;color:#666;'>"
+    f"<div style='border-top:1px solid rgba(255,255,255,0.06);padding-top:20px;margin-top:20px;'>"
+    f"<p style='margin:0;font-size:0.85rem;color:#94a3b8;'>"
     f"© 2025 M3U Editör Pro v2.0 | "
     f"<a href='https://github.com/yourusername/m3uedit' target='_blank' style='color:#FF4B4B;text-decoration:none;'>GitHub</a> | "
     f"<a href='LICENSE' target='_blank' style='color:#FF4B4B;text-decoration:none;'>MIT Lisans</a></p>"
-    f"<p style='margin:8px 0 0 0;font-size:0.7rem;color:#555;'>"
+    f"<p style='margin:8px 0 0 0;font-size:0.7rem;color:#64748b;'>"
     f"Streamlit {st.__version__} | Python {sys.version.split()[0]}</p>"
     f"</div></div>",
     unsafe_allow_html=True,

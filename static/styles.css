@@ -13,6 +13,11 @@ html, body, [data-testid="stAppViewContainer"] {
     background: linear-gradient(160deg, #0a0e17 0%, #111827 50%, #0f172a 100%);
 }
 
+/* Tüm metin elemanları dark mode uyumlu */
+p, span, label, div, li, td, th, caption {
+    color: #e2e8f0;
+}
+
 /* ===== SIDEBAR ===== */
 [data-testid="stSidebar"] {
     background: rgba(15, 23, 42, 0.95) !important;
@@ -22,6 +27,7 @@ html, body, [data-testid="stAppViewContainer"] {
 }
 
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h4,
 [data-testid="stSidebar"] label,
 [data-testid="stSidebar"] .stRadio label {
     color: #cbd5e1 !important;
@@ -29,7 +35,7 @@ html, body, [data-testid="stAppViewContainer"] {
 }
 
 /* ===== BAŞLIKLAR ===== */
-h1, h2, h3 {
+h1, h2, h3, h4, h5, h6 {
     font-weight: 700;
     letter-spacing: -0.02em;
     color: #f1f5f9 !important;
@@ -38,6 +44,26 @@ h1, h2, h3 {
 h1 { font-size: 1.8rem; }
 h2 { font-size: 1.4rem; }
 h3 { font-size: 1.15rem; }
+
+/* ===== LABEL'LAR ===== */
+[data-testid="stWidgetLabel"] label,
+[data-testid="stWidgetLabel"] p,
+.stSelectbox label,
+.stTextInput label,
+.stTextArea label,
+.stNumberInput label,
+.stMultiSelect label,
+.stRadio label,
+.stCheckbox label {
+    color: #cbd5e1 !important;
+}
+
+/* Caption yazıları */
+[data-testid="stCaptionContainer"],
+[data-testid="stCaptionContainer"] p,
+.stCaption {
+    color: #94a3b8 !important;
+}
 
 /* ===== METRİK KARTLARI ===== */
 [data-testid="stMetric"] {
@@ -66,6 +92,11 @@ h3 { font-size: 1.15rem; }
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
+}
+
+/* Metrik delta */
+[data-testid="stMetricDelta"] {
+    color: #a5b4fc !important;
 }
 
 /* ===== BUTONLAR ===== */
@@ -106,11 +137,16 @@ h3 { font-size: 1.15rem; }
 /* ===== FORM ELEMANLARI ===== */
 input, select, textarea,
 [data-testid="stTextInput"] input,
-[data-testid="stTextArea"] textarea {
+[data-testid="stTextArea"] textarea,
+[data-testid="stNumberInput"] input {
     color: #e2e8f0 !important;
     background: rgba(15, 23, 42, 0.8) !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
     border-radius: 8px !important;
+}
+
+input::placeholder, textarea::placeholder {
+    color: #64748b !important;
 }
 
 input:focus, textarea:focus {
@@ -139,12 +175,21 @@ input:focus, textarea:focus {
     color: #FF4B4B !important;
 }
 
-/* ===== TABLO ===== */
-[data-testid="stDataFrame"] {
+/* ===== TABLO / DATA EDITOR ===== */
+[data-testid="stDataFrame"],
+[data-testid="stDataEditor"] {
     background: rgba(15, 23, 42, 0.6);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 12px;
     overflow: hidden;
+}
+
+/* Tablo hücre yazıları */
+[data-testid="stDataFrame"] td,
+[data-testid="stDataFrame"] th,
+[data-testid="stDataEditor"] td,
+[data-testid="stDataEditor"] th {
+    color: #e2e8f0 !important;
 }
 
 /* ===== OYNATICI ===== */
@@ -171,11 +216,20 @@ input:focus, textarea:focus {
     border-left-width: 4px;
 }
 
+/* Success mesajları */
+[data-testid="stAlert"] p {
+    color: inherit !important;
+}
+
 /* ===== EXPANDER ===== */
 [data-testid="stExpander"] {
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 12px;
+}
+
+[data-testid="stExpander"] summary span {
+    color: #e2e8f0 !important;
 }
 
 /* ===== PROGRESS BAR ===== */
@@ -189,6 +243,13 @@ input:focus, textarea:focus {
     background: rgba(15, 23, 42, 0.8) !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
     border-radius: 8px !important;
+    color: #e2e8f0 !important;
+}
+
+/* Selectbox dropdown metin */
+[data-testid="stSelectbox"] span,
+[data-testid="stSelectbox"] div[data-baseweb="select"] span {
+    color: #e2e8f0 !important;
 }
 
 /* ===== MULTISELECT ===== */
@@ -198,9 +259,56 @@ input:focus, textarea:focus {
     border-radius: 8px !important;
 }
 
+[data-testid="stMultiSelect"] span {
+    color: #e2e8f0 !important;
+}
+
+/* Multiselect tag'ler */
+[data-testid="stMultiSelect"] [data-baseweb="tag"] {
+    background: rgba(255, 75, 75, 0.2) !important;
+    border-color: rgba(255, 75, 75, 0.3) !important;
+}
+
+[data-testid="stMultiSelect"] [data-baseweb="tag"] span {
+    color: #f1f5f9 !important;
+}
+
 /* ===== CHECKBOX ===== */
 [data-testid="stCheckbox"] label span {
     color: #cbd5e1 !important;
+}
+
+/* ===== FILE UPLOADER ===== */
+[data-testid="stFileUploader"] label,
+[data-testid="stFileUploader"] span,
+[data-testid="stFileUploader"] p {
+    color: #cbd5e1 !important;
+}
+
+[data-testid="stFileUploader"] section {
+    background: rgba(15, 23, 42, 0.5) !important;
+    border: 1px dashed rgba(255, 255, 255, 0.15) !important;
+    border-radius: 10px !important;
+}
+
+/* ===== NUMBER INPUT ===== */
+[data-testid="stNumberInput"] label {
+    color: #cbd5e1 !important;
+}
+
+/* ===== RADIO ===== */
+[data-testid="stRadio"] label {
+    color: #cbd5e1 !important;
+}
+
+/* ===== MARKDOWN İÇİNDEKİ BOLD ===== */
+[data-testid="stMarkdownContainer"] strong {
+    color: #f1f5f9 !important;
+}
+
+/* ===== DIVIDER ===== */
+hr {
+    border-color: rgba(255, 255, 255, 0.06) !important;
 }
 
 /* ===== SCROLLBAR ===== */
