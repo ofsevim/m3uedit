@@ -180,6 +180,7 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
              color:#fff;font-size:1.5rem;'>⏳ Yükleniyor...</div>
     </div>
     <script src='https://cdn.jsdelivr.net/npm/hls.js@latest'></script>
+    <script src='https://cdn.jsdelivr.net/npm/mpegts.js@latest/dist/mpegts.js'></script>
     <script>
     (function(){{
         var video = document.getElementById('m3u_player');
@@ -189,7 +190,26 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
         function showError(){{ errorDiv.style.display='block'; video.style.display='none'; loadDiv.style.display='none'; }}
         function hideLoading(){{ loadDiv.style.display='none'; }}
         if (!url) {{ showError(); return; }}
-        if (Hls.isSupported()) {{
+
+        var isTS = url.toLowerCase().indexOf('.ts') !== -1;
+        var isHLS = url.toLowerCase().indexOf('.m3u8') !== -1 || url.toLowerCase().indexOf('/live/') !== -1;
+
+        if (isTS && typeof mpegts !== 'undefined' && mpegts.isSupported()) {{
+            var player = mpegts.createPlayer({{
+                type: 'mpegts',
+                url: url,
+                isLive: true
+            }}, {{
+                enableWorker: true,
+                liveBufferLatencyChasing: true,
+                liveSync: true
+            }});
+            player.attachMediaElement(video);
+            player.load();
+            player.play().catch(function(){{}});
+            player.on(mpegts.Events.ERROR, function(){{ showError(); }});
+            video.addEventListener('canplay', function(){{ hideLoading(); }});
+        }} else if (isHLS && typeof Hls !== 'undefined' && Hls.isSupported()) {{
             var hls = new Hls({{enableWorker:true,lowLatencyMode:true,backBufferLength:90}});
             hls.loadSource(url); hls.attachMedia(video);
             hls.on(Hls.Events.MANIFEST_PARSED, function(){{ hideLoading(); video.play().catch(function(){{}}); }});
@@ -199,15 +219,18 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
                     else {{ showError(); }}
                 }}
             }});
-        }} else if (video.canPlayType('application/vnd.apple.mpegurl')) {{
+        }} else if (video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('video/mp2t')) {{
             video.src = url;
             video.addEventListener('loadedmetadata', function(){{ hideLoading(); video.play().catch(function(){{}}); }});
             video.addEventListener('error', function(){{ showError(); }});
-        }} else {{ showError(); }}
+        }} else {{
+            showError();
+        }}
         setTimeout(hideLoading, 10000);
     }})();
     </script>
     """
+
 
 
 # =====================================================================
@@ -290,22 +313,48 @@ with st.sidebar:
         if group_options:
             selected_groups = st.multiselect("Grupları filtrele", group_options, default=None, key="group_filter")
 
-        st.markdown("---")
-        st.markdown("#### 💾 Dışa Aktar")
-        m3u_out = convert_df_to_m3u(st.session_state.data)
+
+# =====================================================================
+# ANA EKRAN
+# =====================================================================
+
+if not st.session_state.data.empty:
+    # Filtreleme
+    df_display = st.session_state.data.copy()
+    if selected_groups:
+        df_display = df_display[df_display["Grup"].isin(selected_groups)]
+
+    # Arama
+    search_term = st.text_input("🔍 Kanal Ara:", "", placeholder="Kanal adı veya grup yazın...")
+    if search_term:
+        df_display = df_display[
+            _safe_contains(df_display["Kanal Adı"], search_term)
+            | _safe_contains(df_display["Grup"], search_term)
+        ]
+
+    # Metrikler (filtrelenmiş veriye göre)
+    mc1, mc2, mc3 = st.columns(3)
+    mc1.metric("📺 Kanal", len(df_display))
+    mc2.metric("📁 Grup", df_display["Grup"].nunique())
+    hls_count = int((df_display["Tür"] == "HLS").sum()) if "Tür" in df_display.columns else 0
+    mc3.metric("📡 HLS", hls_count)
+
+    st.caption(f"Gösterilen: {len(df_display)} / {len(st.session_state.data)} kanal")
+
+    # --- Dışa Aktar & Link ---
+    m3u_out = convert_df_to_m3u(df_display)
+    exp1, exp2 = st.columns(2)
+    with exp1:
         st.download_button(
-            label=f"📥 M3U İndir ({len(st.session_state.data)} kanal)",
+            label=f"📥 M3U İndir ({len(df_display)} kanal)",
             data=m3u_out,
             file_name="iptv_listesi.m3u",
             mime="text/plain",
             type="primary",
             use_container_width=True,
         )
-
-        st.markdown("---")
-        st.markdown("#### 🔗 M3U Link Oluştur")
-        st.caption("Filtrelenmiş listeyi online M3U linki olarak paylaş (365 gün geçerli)")
-        if st.button("🔗 Link Oluştur", use_container_width=True):
+    with exp2:
+        if st.button("🔗 M3U Link Oluştur", use_container_width=True):
             with st.spinner("Link oluşturuluyor..."):
                 link = create_m3u_link(m3u_out)
             if link:
@@ -314,37 +363,9 @@ with st.sidebar:
             else:
                 st.error("Link oluşturulamadı.")
 
-        if st.session_state.get("m3u_link"):
-            st.code(st.session_state.m3u_link, language=None)
-            st.caption("☝️ Bu linki IPTV oynatıcına yapıştırabilirsin.")
-
-
-# =====================================================================
-# ANA EKRAN
-# =====================================================================
-
-if not st.session_state.data.empty:
-    # Metrikler
-    mc1, mc2, mc3 = st.columns(3)
-    mc1.metric("📺 Toplam Kanal", len(st.session_state.data))
-    mc2.metric("📁 Grup", st.session_state.data["Grup"].nunique())
-    hls_count = int((st.session_state.data.get("Tür", pd.Series()) == "HLS").sum()) if "Tür" in st.session_state.data.columns else 0
-    mc3.metric("📡 HLS", hls_count)
-
-    # Arama
-    search_term = st.text_input("🔍 Kanal Ara:", "", placeholder="Kanal adı veya grup yazın...")
-
-    # Filtreleme
-    df_display = st.session_state.data.copy()
-    if selected_groups:
-        df_display = df_display[df_display["Grup"].isin(selected_groups)]
-    if search_term:
-        df_display = df_display[
-            _safe_contains(df_display["Kanal Adı"], search_term)
-            | _safe_contains(df_display["Grup"], search_term)
-        ]
-
-    st.caption(f"Gösterilen: {len(df_display)} / {len(st.session_state.data)} kanal")
+    if st.session_state.get("m3u_link"):
+        st.code(st.session_state.m3u_link, language=None)
+        st.caption("☝️ Bu linki IPTV oynatıcına yapıştırabilirsin.")
 
     # --- Canlı Oynatıcı ---
     st.markdown("### 🎬 Canlı Oynatıcı")
