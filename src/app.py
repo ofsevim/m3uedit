@@ -138,7 +138,22 @@ def convert_df_to_m3u(df: pd.DataFrame) -> str:
 
 
 def create_m3u_link(m3u_content: str) -> str:
-    """Filtrelenmiş M3U içeriğini dpaste.org'a yükleyip raw link döndürür."""
+    """Filtrelenmiş M3U içeriğini paste servisine yükleyip raw link döndürür."""
+    # 1) paste.rs — basit, raw döner, kayıt gerektirmez
+    try:
+        req = urllib.request.Request(
+            "https://paste.rs/",
+            data=m3u_content.encode("utf-8"),
+            headers={"User-Agent": USER_AGENT, "Content-Type": "text/plain"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            paste_url = resp.read().decode("utf-8").strip()
+            if paste_url.startswith("http"):
+                return paste_url
+    except Exception as e:
+        logger.warning(f"paste.rs hatası: {e}")
+
+    # 2) Yedek: dpaste.com
     try:
         data = urllib.parse.urlencode({
             "content": m3u_content,
@@ -146,14 +161,14 @@ def create_m3u_link(m3u_content: str) -> str:
             "expiry_days": 365,
         }).encode("utf-8")
         req = urllib.request.Request(
-            "https://dpaste.org/api/",
+            "https://dpaste.com/api/v2/",
             data=data,
             headers={"User-Agent": USER_AGENT},
         )
         with urllib.request.urlopen(req, timeout=15) as resp:
             paste_url = resp.read().decode("utf-8").strip().strip('"')
-            if not paste_url.endswith("/raw"):
-                paste_url = paste_url.rstrip("/") + "/raw"
+            if not paste_url.endswith(".txt"):
+                paste_url = paste_url.rstrip("/") + ".txt"
             return paste_url
     except Exception as e:
         logger.error(f"M3U link oluşturma hatası: {e}", exc_info=True)
