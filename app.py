@@ -56,7 +56,7 @@ from utils.visitor_counter import VisitorCounter
 from utils.proxy_server import LocalProxyServer
 
 @st.cache_resource
-def get_proxy_server_v2():
+def get_proxy_server():
     server = LocalProxyServer()
     server.start()
     return server
@@ -132,6 +132,248 @@ def create_m3u_link(m3u_content: str) -> str:
     except Exception as e:
         logger.error(f"M3U link oluşturma hatası: {e}", exc_info=True)
         return ""
+
+
+def render_live_player(stream_url: str, height: int = 420) -> str:
+    url = (stream_url or "").replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+    h = str(height)
+
+    # Yerel proxy base URL
+    proxy_server = get_proxy_server()
+    local_proxy_base = f"http://127.0.0.1:{proxy_server.port}/proxy?url="
+
+    return f"""
+    <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+    <link href="https://unpkg.com/@videojs/themes@1.0.1/dist/city/index.css" rel="stylesheet">
+    <style>
+        .player-wrap {{
+            position: relative; width: 100%; height: {h}px; background: #000;
+            border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08);
+        }}
+        .video-js {{ width: 100%; height: 100%; }}
+        .vjs-city .vjs-big-play-button {{
+            left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important;
+            margin: 0 !important; width: 2.5em !important; height: 2.5em !important; border-radius: 50% !important;
+        }}
+        #ps {{
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            z-index: 20; pointer-events: none; text-align: center; color: #fff;
+        }}
+        #ps.active {{ background: rgba(0,0,0,0.65); pointer-events: auto; }}
+        #ps .box {{
+            background: rgba(15,23,42,0.92); padding: 22px 32px; border-radius: 16px;
+            font-size: 0.92rem; border: 1px solid rgba(255,255,255,0.15); backdrop-filter: blur(10px);
+            max-width: 420px;
+        }}
+        .abtn {{
+            display: inline-block; margin: 5px; padding: 10px 20px; border: none; border-radius: 8px;
+            cursor: pointer; font-size: 0.82rem; font-weight: 600; color: #fff; text-decoration: none;
+        }}
+        .abtn-blue {{ background: #3b82f6; }}
+        .abtn-green {{ background: #10b981; }}
+        .abtn-red {{ background: #ef4444; }}
+        .abtn-gray {{ background: #475569; }}
+        #dlog {{
+            position: absolute; bottom: 4px; left: 4px; right: 4px; font-size: 0.6rem;
+            color: #64748b; max-height: 55px; overflow-y: auto; font-family: monospace;
+            background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 6px;
+            display: none; z-index: 30;
+        }}
+        .player-wrap:hover #dlog {{ display: block; }}
+    </style>
+
+    <div class="player-wrap">
+        <video id="vp" class="video-js vjs-theme-city vjs-big-play-centered"></video>
+        <div id="ps"><div class="box" id="psb"><div id="pst">⏳ Başlatılıyor...</div></div></div>
+        <div id="dlog"></div>
+    </div>
+
+    <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest/dist/mpegts.js"></script>
+
+    <script>
+    (function(){{
+        var origUrl = '{url}';
+        if (!origUrl) return;
+
+        var player = videojs('vp', {{
+            autoplay:true, controls:true, responsive:true, fluid:false,
+            liveui:true, preload:'auto', userActions:{{hotkeys:true}}
+        }});
+
+        var ps  = document.getElementById('ps');
+        var pst = document.getElementById('pst');
+        var dl  = document.getElementById('dlog');
+        var ok  = false;
+        var curHls = null;
+        var curTs  = null;
+
+        /* ── Proxy zinciri ── */
+        var PROXIES = [
+            {{ name:'Doğrudan',    fn: null }},
+            {{ name:'Yerel Proxy', fn: function(u){{ return '{local_proxy_base}' + encodeURIComponent(u); }} }},
+            {{ name:'AllOrigins',  fn: function(u){{ return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); }} }},
+            {{ name:'CorsProxy',   fn: function(u){{ return 'https://corsproxy.io/?' + encodeURIComponent(u); }} }},
+            {{ name:'CodeTabs',    fn: function(u){{ return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u); }} }}
+        ];
+
+        function log(m) {{
+            console.log('[P]', m);
+            if(dl) {{ dl.innerHTML += m+'<br>'; dl.scrollTop = dl.scrollHeight; }}
+        }}
+        function show(m, lock) {{
+            pst.innerHTML = m;
+            ps.style.display = 'flex';
+            ps.classList.toggle('active', !!lock);
+        }}
+        function hide() {{ ps.style.display = 'none'; }}
+
+        function cleanup() {{
+            if(curHls) {{ try{{curHls.destroy();}}catch(e){{}} curHls=null; }}
+            if(curTs)  {{ try{{curTs.unload();curTs.detachMediaElement();curTs.destroy();}}catch(e){{}} curTs=null; }}
+        }}
+
+        var mediaEl = player.tech({{IWillNotUseThisInPlugins:true}}).el();
+
+        /* ══════════════════════════════════════
+           ANA DENEME FONKSİYONU
+           ══════════════════════════════════════ */
+        function tryAttempt(idx) {{
+            if (ok || idx >= PROXIES.length) {{
+                if (!ok) showFail();
+                return;
+            }}
+
+            cleanup();
+            var p = PROXIES[idx];
+            log('▶ Deneme ' + idx + ': ' + p.name);
+            show('🔄 ' + p.name + ' deneniyor...', false);
+
+            var lower = origUrl.toLowerCase();
+            var isHLS = lower.indexOf('.m3u8') !== -1 || lower.indexOf('m3u8') !== -1 
+                     || lower.indexOf('/live/') !== -1 || lower.indexOf('/hls') !== -1
+                     || lower.indexOf('playlist') !== -1;
+            var isTS  = lower.indexOf('.ts') !== -1 && !isHLS;
+
+            /* ── HLS Oynatma ── */
+            if (typeof Hls !== 'undefined' && Hls.isSupported() && (isHLS || !isTS)) {{
+                var cfg = {{
+                    enableWorker: true,
+                    lowLatencyMode: true,
+                    manifestLoadingTimeOut: 8000,
+                    fragLoadingTimeOut: 10000,
+                    levelLoadingTimeOut: 8000,
+                }};
+
+                /*
+                 * ✅ KRİTİK FİX: xhrSetup ile proxy
+                 * loadSource() HER ZAMAN orijinal URL ile çağrılır.
+                 * HLS.js relative URL'leri orijinal base'e göre çözümler.
+                 * xhrSetup sadece gerçek HTTP isteğini proxy'den geçirir.
+                 */
+                if (p.fn) {{
+                    cfg.xhrSetup = function(xhr, url) {{
+                        var proxied = p.fn(url);
+                        log('  → ' + url.substring(0,50) + '...');
+                        xhr.open('GET', proxied, true);
+                    }};
+                }}
+
+                var hls = new Hls(cfg);
+                curHls = hls;
+
+                /* ✅ HER ZAMAN orijinal URL! Proxy değil! */
+                hls.loadSource(origUrl);
+                hls.attachMedia(mediaEl);
+
+                var tout = setTimeout(function() {{
+                    if (!ok) {{
+                        log('⏱ Timeout (' + p.name + ')');
+                        tryAttempt(idx + 1);
+                    }}
+                }}, 12000);
+
+                hls.on(Hls.Events.MANIFEST_PARSED, function(e, d) {{
+                    clearTimeout(tout);
+                    log('✅ Manifest OK! (' + d.levels.length + ' level)');
+                    ok = true;
+                    hide();
+                    mediaEl.play().catch(function(err) {{
+                        show('▶️ Oynatmak için tıklayın', false);
+                        mediaEl.addEventListener('click', function() {{
+                            mediaEl.play(); hide();
+                        }}, {{once:true}});
+                    }});
+                }});
+
+                hls.on(Hls.Events.FRAG_LOADED, function() {{
+                    if (!ok) {{ clearTimeout(tout); ok = true; hide(); }}
+                }});
+
+                hls.on(Hls.Events.ERROR, function(e, d) {{
+                    log('⚠ HLS: ' + d.details + ' fatal=' + d.fatal);
+                    if (d.fatal) {{
+                        clearTimeout(tout);
+                        tryAttempt(idx + 1);
+                    }}
+                }});
+
+                return;
+            }}
+
+            /* ── MPEG-TS ── */
+            if (isTS && typeof mpegts !== 'undefined' && mpegts.isSupported()) {{
+                var tsUrl = p.fn ? p.fn(origUrl) : origUrl;
+                log('TS: ' + tsUrl.substring(0,60));
+                var m = mpegts.createPlayer({{type:'mpegts', url:tsUrl, isLive:true}});
+                curTs = m;
+                m.attachMediaElement(mediaEl);
+                m.load(); m.play();
+                var ttout = setTimeout(function(){{ if(!ok) tryAttempt(idx+1); }}, 10000);
+                m.on(mpegts.Events.ERROR, function(){{ clearTimeout(ttout); tryAttempt(idx+1); }});
+                mediaEl.addEventListener('playing', function(){{
+                    clearTimeout(ttout); ok=true; hide();
+                }}, {{once:true}});
+                return;
+            }}
+
+            /* ── Genel Video ── */
+            var vUrl = p.fn ? p.fn(origUrl) : origUrl;
+            player.src({{src:vUrl, type:'video/mp4'}});
+            var dtout = setTimeout(function(){{ if(!ok) tryAttempt(idx+1); }}, 8000);
+            player.one('playing', function(){{ clearTimeout(dtout); ok=true; hide(); }});
+            player.one('error', function(){{ clearTimeout(dtout); tryAttempt(idx+1); }});
+            player.play().catch(function(){{}});
+        }}
+
+        /* ── Başarısız UI ── */
+        function showFail() {{
+            log('❌ Tüm yöntemler başarısız');
+            show(
+                '🚫 Oynatılamadı<br>' +
+                '<p style="font-size:0.75rem;color:#94a3b8;margin:5px 0 12px 0;">' +
+                'Bu kanal tarayıcıda CORS/DRM nedeniyle açılamıyor.<br>' +
+                'Harici oynatıcı kullanın.</p>' +
+                '<button class="abtn abtn-blue" onclick="location.reload()">🔄 Tekrar</button>' +
+                '<button class="abtn abtn-green" onclick="navigator.clipboard.writeText(\\'' + origUrl + '\\');this.textContent=\\'✅ Kopyalandı!\\'">📋 URL Kopyala</button><br>' +
+                '<div style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;">' +
+                '<a href="vlc://' + origUrl + '" class="abtn abtn-red">▶ VLC</a>' +
+                '<a href="potplayer://' + origUrl + '" class="abtn abtn-gray">▶ PotPlayer</a></div>',
+                true
+            );
+        }}
+
+        /* ── Global hata yakalama ── */
+        player.on('playing', function(){{ ok=true; hide(); }});
+        player.on('error', function(){{ if(!ok) log('VideoJS error: ' + JSON.stringify(player.error())); }});
+
+        /* ══ BAŞLAT ══ */
+        log('URL: ' + origUrl);
+        tryAttempt(0);
+    }})();
+    </script>
+    """
 
 
 
@@ -413,13 +655,10 @@ if not st.session_state.data.empty:
                 st.warning("⚠️ CORS Kısıtlı — Proxy aktif.")
         with pcol2:
             st.markdown(f"### ▶ {pc['name']}")
-
-            proxy_server = get_proxy_server_v2()
-            player_url = proxy_server.get_player_url(pc["url"])
-
-            # ✅ iframe olarak proxy sunucusundan player sayfasını yükle
-            # Player ve proxy AYNI ORİJİN → CORS sorunu YOK!
-            components.iframe(player_url, height=420)
+            components.html(
+                render_live_player(pc["url"], height=380),
+                height=420,
+            )
 
         col1, col2 = st.columns(2)
         with col1:
