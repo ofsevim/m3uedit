@@ -53,7 +53,6 @@ st.set_page_config(
 # --- YARDIMCI MODÜLLER ---
 from utils.parser import parse_m3u_lines, filter_channels, convert_df_to_m3u, batch_check_health
 from utils.visitor_counter import VisitorCounter
-from utils.proxy_server import LocalProxyServer
 
 # --- CSS ---
 def _load_css():
@@ -78,13 +77,6 @@ def _create_ssl_context():
 
 # --- SİSTEMLER ---
 vc = VisitorCounter()
-
-
-@st.cache_resource
-def get_proxy_server():
-    proxy = LocalProxyServer()
-    proxy.start()
-    return proxy
 
 
 # =====================================================================
@@ -135,12 +127,9 @@ def create_m3u_link(m3u_content: str) -> str:
         return ""
 
 
-def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool = False) -> str:
+def render_live_player(stream_url: str, height: int = 420) -> str:
     url = (stream_url or "").replace("'", "\\'").replace('"', '\\"')
     h = str(height)
-
-    proxy_server = get_proxy_server()
-    local_proxy_url = proxy_server.get_proxy_url(stream_url) if stream_url else ""
 
     return f"""
     <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
@@ -166,14 +155,21 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
             font-size: 0.95rem; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(8px);
         }}
         .retry-btn {{
-            margin-top: 15px; padding: 10px 20px; background: #3b82f6; color: white;
+            margin-top: 12px; padding: 10px 20px; background: #3b82f6; color: white;
             border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600;
         }}
         .vlc-btn {{
-            margin-top: 10px; padding: 10px 20px; background: #ef4444; color: white;
+            margin-top: 8px; padding: 10px 20px; background: #ef4444; color: white;
             border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem;
             font-weight: 600; text-decoration: none; display: inline-block;
         }}
+        #debug-log {{
+            position: absolute; bottom: 5px; left: 5px; right: 5px;
+            font-size: 0.65rem; color: #64748b; max-height: 60px; overflow-y: auto;
+            font-family: monospace; background: rgba(0,0,0,0.5); padding: 4px 8px;
+            border-radius: 6px; display: none; z-index: 30;
+        }}
+        .player-container:hover #debug-log {{ display: block; }}
     </style>
 
     <div class="player-container">
@@ -183,6 +179,7 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
                 <div id="status-text">⏳ Başlatılıyor...</div>
             </div>
         </div>
+        <div id="debug-log"></div>
     </div>
 
     <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
@@ -191,162 +188,153 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
 
     <script>
     (function(){{
+        var origUrl = '{url}';
+        if (!origUrl) {{ document.getElementById('status-text').innerHTML = '⚠️ URL yok'; return; }}
+
         var player = videojs('iptv-player', {{
-            autoplay: true,
-            controls: true,
-            responsive: true,
-            fluid: false,
-            liveui: true,
-            preload: 'auto',
-            userActions: {{ hotkeys: true }}
+            autoplay: true, controls: true, responsive: true, fluid: false,
+            liveui: true, preload: 'auto', userActions: {{ hotkeys: true }}
         }});
 
-        var statusEl = document.getElementById('player-status');
+        var statusEl  = document.getElementById('player-status');
         var statusText = document.getElementById('status-text');
-        var origUrl = '{url}';
-        var localProxyUrl = '{local_proxy_url}';
-        var externalProxies = [
-            'https://api.allorigins.win/raw?url=',
-            'https://corsproxy.io/?'
+        var debugLog   = document.getElementById('debug-log');
+        var hasSucceeded = false;
+        var currentHls = null;
+        var currentMpegts = null;
+        var attempt = 0;
+
+        var PROXY_CHAINS = [
+            function(u) {{ return u; }},
+            function(u) {{ return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); }},
+            function(u) {{ return 'https://corsproxy.io/?' + encodeURIComponent(u); }}
         ];
 
-        var attempt = 0;
-        var hasSucceeded = false;
-        var retrying = false;           // ✅ Race condition kilidi
-        var currentHls = null;          // ✅ Aktif HLS instance referansı
-        var currentMpegts = null;       // ✅ Aktif mpegts instance referansı
+        function log(msg) {{
+            console.log('[Player]', msg);
+            if (debugLog) {{
+                debugLog.innerHTML += msg + '<br>';
+                debugLog.scrollTop = debugLog.scrollHeight;
+            }}
+        }}
 
-        function showStatus(msg, isPersistent) {{
+        function showStatus(msg, persistent) {{
             statusText.innerHTML = msg;
             statusEl.style.display = 'flex';
-            if (isPersistent) statusEl.classList.add('active');
-            else statusEl.classList.remove('active');
+            statusEl.classList.toggle('active', !!persistent);
         }}
-
         function hideStatus() {{ statusEl.style.display = 'none'; }}
 
-        // ✅ Eski player instance'larını temizle
         function cleanup() {{
-            if (currentHls) {{
-                try {{ currentHls.destroy(); }} catch(e) {{}}
-                currentHls = null;
-            }}
-            if (currentMpegts) {{
-                try {{ currentMpegts.unload(); currentMpegts.detachMediaElement(); currentMpegts.destroy(); }} catch(e) {{}}
-                currentMpegts = null;
-            }}
-            try {{ player.reset(); }} catch(e) {{}}
+            if (currentHls)    {{ try {{ currentHls.destroy(); }} catch(e){{}} currentHls = null; }}
+            if (currentMpegts) {{ try {{ currentMpegts.unload(); currentMpegts.detachMediaElement(); currentMpegts.destroy(); }} catch(e){{}} currentMpegts = null; }}
         }}
 
-        function startPlay(url, label) {{
+        function tryPlay(proxyIndex) {{
             if (hasSucceeded) return;
-            cleanup();                   // ✅ Önce eskiyi temizle
-            console.log('Attempt ' + attempt + ':', label, url);
-            showStatus('🔄 ' + (label || 'Yükleniyor...'), false);
+            if (proxyIndex >= PROXY_CHAINS.length) {{
+                showFail();
+                return;
+            }}
 
-            var lower = url.toLowerCase();
+            cleanup();
+            attempt = proxyIndex;
+            var proxyFn = PROXY_CHAINS[proxyIndex];
+            var playUrl = proxyFn(origUrl);
+            var label = proxyIndex === 0 ? 'Doğrudan' : 'Proxy ' + proxyIndex;
+
+            log('Deneme ' + proxyIndex + ': ' + label);
+            showStatus('🔄 ' + label + ' deneniyor...', false);
+
             var mediaEl = player.tech({{ IWillNotUseThisInPlugins: true }}).el();
+            var lower = origUrl.toLowerCase();
+            var isHLS = lower.includes('.m3u8') || lower.includes('m3u8') || lower.includes('/live/') || lower.includes('hls');
+            var isTS  = lower.endsWith('.ts');
 
-            if (lower.includes('.m3u8') || lower.includes('m3u8') || lower.includes('/live/')) {{
-                if (Hls && Hls.isSupported()) {{
-                    var hls = new Hls({{
-                        enableWorker: true,
-                        lowLatencyMode: true,
-                        xhrSetup: function(xhr) {{
-                            xhr.timeout = 10000;
-                        }}
-                    }});
-                    currentHls = hls;   // ✅ Referansı sakla
-                    hls.loadSource(url);
-                    hls.attachMedia(mediaEl);
-                    hls.on(Hls.Events.MANIFEST_PARSED, function() {{
-                        hasSucceeded = true;
-                        hideStatus();
-                        mediaEl.play().catch(function(e) {{ console.warn('Autoplay blocked:', e); }});
-                    }});
-                    hls.on(Hls.Events.ERROR, function(e, d) {{
-                        console.warn('HLS Error:', d.type, d.details, 'fatal:', d.fatal);
-                        if (d.fatal) tryNext();
-                    }});
-                }} else if (mediaEl.canPlayType('application/vnd.apple.mpegURL')) {{
-                    // Safari native HLS
-                    mediaEl.src = url;
-                    mediaEl.addEventListener('loadedmetadata', function() {{
-                        hasSucceeded = true;
-                        hideStatus();
-                        mediaEl.play().catch(function(e){{}});
-                    }}, {{ once: true }});
-                    mediaEl.addEventListener('error', function() {{ tryNext(); }}, {{ once: true }});
+            if (isHLS && Hls && Hls.isSupported()) {{
+                var hlsConfig = {{
+                    enableWorker: true,
+                    lowLatencyMode: true,
+                    fragLoadingTimeOut: 10000,
+                    manifestLoadingTimeOut: 10000,
+                }};
+
+                if (proxyIndex > 0) {{
+                    hlsConfig.xhrSetup = function(xhr, url) {{
+                        xhr.open('GET', proxyFn(url), true);
+                    }};
                 }}
-            }} else if (lower.includes('.ts')) {{
-                if (typeof mpegts !== 'undefined' && mpegts.isSupported()) {{
-                    var m = mpegts.createPlayer({{ type: 'mpegts', url: url, isLive: true }});
-                    currentMpegts = m;  // ✅ Referansı sakla
-                    m.attachMediaElement(mediaEl);
-                    m.load();
-                    m.play();
-                    m.on(mpegts.Events.ERROR, function() {{ tryNext(); }});
-                    mediaEl.addEventListener('playing', function() {{
-                        hasSucceeded = true;
-                        hideStatus();
-                    }}, {{ once: true }});
-                }}
+
+                var hls = new Hls(hlsConfig);
+                currentHls = hls;
+                hls.loadSource(playUrl);
+                hls.attachMedia(mediaEl);
+
+                var hlsTimeout = setTimeout(function() {{
+                    if (!hasSucceeded) tryPlay(proxyIndex + 1);
+                }}, 15000);
+
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {{
+                    clearTimeout(hlsTimeout);
+                    hasSucceeded = true;
+                    hideStatus();
+                    mediaEl.play().catch(function(e) {{
+                        log('Autoplay engellendi');
+                        showStatus('▶️ Oynatmak için tıklayın', false);
+                        mediaEl.addEventListener('click', function() {{
+                            mediaEl.play(); hideStatus();
+                        }}, {{ once: true }});
+                    }});
+                }});
+
+                hls.on(Hls.Events.ERROR, function(e, data) {{
+                    if (data.fatal) {{
+                        clearTimeout(hlsTimeout);
+                        tryPlay(proxyIndex + 1);
+                    }}
+                }});
+
+            }} else if (isHLS && mediaEl.canPlayType('application/vnd.apple.mpegURL')) {{
+                mediaEl.src = playUrl;
+                mediaEl.addEventListener('loadedmetadata', function() {{
+                    hasSucceeded = true; hideStatus();
+                    mediaEl.play().catch(function(){{}});
+                }}, {{ once: true }});
+                mediaEl.addEventListener('error', function() {{ tryPlay(proxyIndex + 1); }}, {{ once: true }});
+            }} else if (isTS && typeof mpegts !== 'undefined' && mpegts.isSupported()) {{
+                var m = mpegts.createPlayer({{ type: 'mpegts', url: playUrl, isLive: true }});
+                currentMpegts = m;
+                m.attachMediaElement(mediaEl);
+                m.load(); m.play();
+                m.on(mpegts.Events.ERROR, function() {{ tryPlay(proxyIndex + 1); }});
+                mediaEl.addEventListener('playing', function() {{
+                    hasSucceeded = true; hideStatus();
+                }}, {{ once: true }});
             }} else {{
-                player.src({{ src: url, type: 'video/mp4' }});
-                player.play().catch(function() {{ tryNext(); }});
+                player.src({{ src: playUrl, type: 'video/mp4' }});
+                player.one('playing', function() {{ hasSucceeded = true; hideStatus(); }});
+                player.one('error', function() {{ tryPlay(proxyIndex + 1); }});
             }}
         }}
 
-        function tryNext() {{
-            if (hasSucceeded || retrying) return;  // ✅ Race condition koruması
-            retrying = true;
-            attempt++;
-
-            setTimeout(function() {{  // ✅ Mikro gecikme ile debounce
-                retrying = false;
-
-                if (attempt === 1) {{
-                    startPlay(origUrl, 'Doğrudan Bağlantı');
-                }} else if (attempt === 2) {{
-                    startPlay(externalProxies[0] + encodeURIComponent(origUrl), 'Global Proxy 1');
-                }} else if (attempt === 3) {{
-                    startPlay(externalProxies[1] + encodeURIComponent(origUrl), 'Global Proxy 2');
-                }} else {{
-                    var failHtml = '🚫 Oynatılamadı<br>' +
-                        '<p style="font-size:0.8rem;color:#94a3b8;margin:5px 0 10px 0;">Tüm yöntemler denendi.</p>' +
-                        '<button class="retry-btn" onclick="location.reload()" style="margin:5px;">🔄 Tekrar</button>' +
-                        '<button class="retry-btn" style="background:#10b981;margin:5px;" ' +
-                        'onclick="navigator.clipboard.writeText(\\'' + origUrl + '\\');this.textContent=\\'✅ Kopyalandı!\\'">📋 URL Kopyala</button><br>' +
-                        '<div style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;">' +
-                        '<a href="vlc://' + origUrl + '" class="vlc-btn" style="margin:3px;">▶ VLC</a>' +
-                        '<a href="potplayer://' + origUrl + '" class="vlc-btn" style="background:#334155;margin:3px;">▶ PotPlayer</a>' +
-                        '</div>';
-                    showStatus(failHtml, true);
-                }}
-            }}, 300);
+        function showFail() {{
+            var html = '🚫 Oynatılamadı<br>' +
+                '<p style="font-size:0.75rem;color:#94a3b8;margin:5px 0;">Bu kanal tarayıcıda açılamıyor.</p>' +
+                '<button class="retry-btn" onclick="location.reload()" style="margin:4px;">🔄 Tekrar</button>' +
+                '<button class="retry-btn" style="background:#10b981;margin:4px;" ' +
+                    'onclick="navigator.clipboard.writeText(\\'' + origUrl + '\\');this.textContent=\\'✅ Kopyalandı!\\'">📋 URL Kopyala</button><br>' +
+                '<div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px;">' +
+                    '<a href="vlc://' + origUrl + '" class="vlc-btn" style="margin:3px;">▶ VLC</a>' +
+                    '<a href="potplayer://' + origUrl + '" class="vlc-btn" style="background:#334155;margin:3px;">▶ PotPlayer</a>' +
+                '</div>';
+            showStatus(html, true);
         }}
 
-        player.on('playing', function() {{
-            hasSucceeded = true;
-            hideStatus();
-        }});
-        player.on('error', function() {{
-            if (!hasSucceeded) tryNext();
-        }});
-
-        if (!origUrl) {{
-            showStatus('⚠️ Geçersiz URL', true);
-        }} else {{
-            startPlay(localProxyUrl, 'Yerel Proxy');
-        }}
-
-        // Safety timeout
-        setTimeout(function() {{
-            if (!hasSucceeded && attempt === 0) tryNext();
-        }}, 10000);
+        tryPlay(0);
     }})();
     </script>
     """
+
 
 
 # =====================================================================
@@ -590,9 +578,8 @@ if not st.session_state.data.empty:
                 st.warning("⚠️ CORS Kısıtlı — Proxy aktif.")
         with pcol2:
             st.markdown(f"### ▶ {pc['name']}")
-            cors_restricted = "CORS" in pc.get("durum", "")
             components.html(
-                render_live_player(pc["url"], height=380, cors_restricted=cors_restricted),
+                render_live_player(pc["url"], height=380),
                 height=420,
             )
 
