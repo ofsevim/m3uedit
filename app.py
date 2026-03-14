@@ -429,31 +429,36 @@ if not st.session_state.data.empty:
 
     # --- Canlı Oynatıcı ---
     st.markdown("### 🎬 Canlı Oynatıcı")
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        # Seçenekleri "Durum - Kanal Adı" formatında hazırla
-        play_options_map = {}
-        for _, row in df_display.iterrows():
-            durum = row.get("Durum", "").split(" ")[0] if "Durum" in row else "❔"
-            display_name = f"{durum} {row['Kanal Adı']}"
-            play_options_map[display_name] = row['Kanal Adı']
-            
-        play_name_display = st.selectbox("Oynatılacak Kanal", options=list(play_options_map.keys()),
-                                         index=None, placeholder="Kanal seçin...", key="play_select")
-    with col2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("▶ OYNAT", use_container_width=True, type="primary"):
-            if play_name_display:
-                real_name = play_options_map[play_name_display]
-                row = df_display[df_display["Kanal Adı"] == real_name]
-                if not row.empty:
-                    st.session_state.play_channel = {
-                        "name": real_name,
-                        "url": row.iloc[0]["URL"],
-                        "logo": row.iloc[0].get("LogoURL", ""),
-                        "group": row.iloc[0].get("Grup", ""),
-                    }
-                    st.rerun()
+    
+    # Seçenekleri "Durum - Kanal Adı" formatında hazırla
+    play_options_map = {}
+    for _, row in df_display.iterrows():
+        durum = row.get("Durum", "").split(" ")[0] if "Durum" in row else "❔"
+        display_name = f"{durum} {row['Kanal Adı']}"
+        play_options_map[display_name] = row['Kanal Adı']
+        
+    play_name_display = st.selectbox(
+        "Oynatılacak Kanal", 
+        options=["Seçiniz..."] + list(play_options_map.keys()),
+        index=0,
+        key="play_select_auto"
+    )
+
+    if play_name_display != "Seçiniz...":
+        real_name = play_options_map[play_name_display]
+        current_playing = st.session_state.get("play_channel", {})
+        
+        # Eğer zaten bu kanal oynamıyorsa state'i güncelle
+        if not current_playing or current_playing.get("name") != real_name:
+            row = df_display[df_display["Kanal Adı"] == real_name]
+            if not row.empty:
+                st.session_state.play_channel = {
+                    "name": real_name,
+                    "url": row.iloc[0]["URL"],
+                    "logo": row.iloc[0].get("LogoURL", ""),
+                    "group": row.iloc[0].get("Grup", ""),
+                }
+                st.rerun()
 
     if st.session_state.play_channel:
         pc = st.session_state.play_channel
