@@ -11,7 +11,29 @@ import sys
 import time
 import logging
 import urllib.parse
-from typing import Iterable, List, Dict
+from datetime import datetime
+
+# --- MODÜL YOLLARI ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+# --- YAPILANDIRMA ---
+try:
+    from utils.config import (
+        PAGE_TITLE, PAGE_ICON, REQUEST_TIMEOUT, USER_AGENT, 
+        DEFAULT_TR_FILTER, TABLE_HEIGHT, DISABLE_SSL_VERIFY,
+        APP_VERSION
+    )
+except ImportError:
+    PAGE_TITLE = "M3U Editör Pro"
+    PAGE_ICON = "📺"
+    REQUEST_TIMEOUT = 30
+    USER_AGENT = "Mozilla/5.0"
+    DEFAULT_TR_FILTER = True
+    TABLE_HEIGHT = 600
+    DISABLE_SSL_VERIFY = True
+    APP_VERSION = "2.0.0"
 
 # --- LOG ---
 if not logging.getLogger().hasHandlers():
@@ -20,124 +42,48 @@ logger = logging.getLogger(__name__)
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="M3U Editör Pro",
+    page_title=PAGE_TITLE,
     layout="wide",
-    page_icon="📺",
+    page_icon=PAGE_ICON,
     initial_sidebar_state="expanded",
 )
 
-# --- MODÜL YOLLARI ---
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, current_dir)
-
-try:
-    from utils.config import REQUEST_TIMEOUT, USER_AGENT, DEFAULT_TR_FILTER, TABLE_HEIGHT
-except ImportError:
-    REQUEST_TIMEOUT = 30
-    USER_AGENT = "Mozilla/5.0"
-    DEFAULT_TR_FILTER = True
-    TABLE_HEIGHT = 600
+# --- YARDIMCI MODÜLLER ---
+from utils.parser import parse_m3u_lines, filter_channels, convert_df_to_m3u
+from utils.visitor_counter import VisitorCounter
 
 # --- CSS ---
 def _load_css():
-    for path in [os.path.join(current_dir, "static", "styles.css"),
-                 os.path.join(os.getcwd(), "static", "styles.css")]:
-        try:
-            with open(path, encoding="utf-8") as f:
-                st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-                return
-        except OSError:
-            continue
+    css_path = os.path.join(current_dir, "static", "styles.css")
+    try:
+        with open(css_path, encoding="utf-8") as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    except OSError:
+        pass
 
 _load_css()
 
+# --- SSL CONTEXT ---
+def _create_ssl_context():
+    ctx = ssl.create_default_context()
+    if DISABLE_SSL_VERIFY:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+# --- SİSTEMLER ---
+vc = VisitorCounter()
 
 # =====================================================================
 # YARDIMCI FONKSİYONLAR
 # =====================================================================
 
-TR_PATTERN = re.compile(
-    r"(\b|_|\[|\(|\|)(TR|TURK|TÜRK|TURKIYE|TÜRKİYE|YERLI|ULUSAL|ISTANBUL)(\b|_|\]|\)|\||:)",
-    re.IGNORECASE,
-)
-
-
-def _create_ssl_context():
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
-
-
 def _safe_contains(series: pd.Series, term: str) -> pd.Series:
     return series.astype(str).str.contains(term, case=False, na=False)
 
-
-def parse_m3u_lines(iterator: Iterable) -> List[Dict]:
-    channels = []
-    current_info = None
-    for line in iterator:
-        if isinstance(line, bytes):
-            try:
-                line = line.decode("utf-8", errors="ignore").strip()
-            except Exception:
-                continue
-        else:
-            line = line.strip()
-        if not line:
-            continue
-        if line.startswith("#EXTINF"):
-            info = {"Grup": "Genel", "Kanal Adı": "Bilinmeyen", "URL": "", "LogoURL": ""}
-            logo = re.search(r'tvg-logo="([^"]*)"', line)
-            if logo:
-                info["LogoURL"] = logo.group(1)
-            grp = re.search(r'group-title="([^"]*)"', line)
-            if grp:
-                info["Grup"] = grp.group(1)
-            parts = line.split(",")
-            if len(parts) > 1:
-                info["Kanal Adı"] = parts[-1].strip()
-            current_info = info
-        elif not line.startswith("#"):
-            if current_info:
-                current_info["URL"] = line
-                lower = line.lower()
-                if ".m3u8" in lower or "/live/" in lower:
-                    current_info["Tür"] = "HLS"
-                elif ".mpd" in lower:
-                    current_info["Tür"] = "DASH"
-                else:
-                    current_info["Tür"] = "Diğer"
-                channels.append(current_info)
-                current_info = None
-    return channels
-
-
-def filter_channels(channels: List[Dict], only_tr: bool = False, keyword: str = "", group_filter: str = "") -> List[Dict]:
-    result = channels
-    if only_tr:
-        result = [ch for ch in result if TR_PATTERN.search(ch.get("Grup", "") + " " + ch.get("Kanal Adı", ""))]
-    if keyword:
-        kw = keyword.lower()
-        result = [ch for ch in result if kw in ch.get("Kanal Adı", "").lower() or kw in ch.get("Grup", "").lower()]
-    if group_filter:
-        result = [ch for ch in result if ch.get("Grup", "") == group_filter]
-    return result
-
-
-def convert_df_to_m3u(df: pd.DataFrame) -> str:
-    lines = ["#EXTM3U"]
-    for _, row in df.iterrows():
-        logo = row.get("LogoURL", "")
-        logo_attr = f' tvg-logo="{logo}"' if logo else ""
-        lines.append(f'#EXTINF:-1{logo_attr} group-title="{row["Grup"]}",{row["Kanal Adı"]}')
-        lines.append(str(row["URL"]))
-    return "\n".join(lines) + "\n"
-
-
 def create_m3u_link(m3u_content: str) -> str:
     """Filtrelenmiş M3U içeriğini paste servisine yükleyip raw link döndürür."""
-    # 1) paste.rs — basit, raw döner, kayıt gerektirmez
+    # 1) paste.rs
     try:
         req = urllib.request.Request(
             "https://paste.rs/",
@@ -151,7 +97,7 @@ def create_m3u_link(m3u_content: str) -> str:
     except Exception as e:
         logger.warning(f"paste.rs hatası: {e}")
 
-    # 2) Yedek: dpaste.com
+    # 2) dpaste.com
     try:
         data = urllib.parse.urlencode({
             "content": m3u_content,
@@ -171,11 +117,6 @@ def create_m3u_link(m3u_content: str) -> str:
     except Exception as e:
         logger.error(f"M3U link oluşturma hatası: {e}", exc_info=True)
         return ""
-
-
-# =====================================================================
-# VIDEO OYNATICI
-# =====================================================================
 
 def render_live_player(stream_url: str, height: int = 420) -> str:
     url = (stream_url or "").replace("'", "\\'").replace('"', '\\"')
@@ -275,7 +216,6 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
     </script>
     """
 
-
 # =====================================================================
 # SESSION STATE
 # =====================================================================
@@ -285,6 +225,10 @@ if "data" not in st.session_state:
 if "play_channel" not in st.session_state:
     st.session_state.play_channel = None
 
+# Ziyaretçi takibi
+if "visited" not in st.session_state:
+    vc.increment_visit(st.runtime.scriptrunner.add_script_run_ctx().id if hasattr(st.runtime.scriptrunner, "add_script_run_ctx") else None)
+    st.session_state.visited = True
 
 # =====================================================================
 # SIDEBAR
@@ -292,10 +236,10 @@ if "play_channel" not in st.session_state:
 
 with st.sidebar:
     st.markdown(
-        "<div style='text-align:center;padding:0.3rem 0;'>"
-        "<span style='font-size:1.2rem;'>📺</span> "
-        "<span style='font-size:0.95rem;font-weight:600;color:#f1f5f9;'>M3U Editör Pro</span>"
-        "</div>",
+        f"<div style='text-align:center;padding:0.3rem 0;'>"
+        f"<span style='font-size:1.2rem;'>{PAGE_ICON}</span> "
+        f"<span style='font-size:0.95rem;font-weight:600;color:#f1f5f9;'>{PAGE_TITLE}</span>"
+        f"</div>",
         unsafe_allow_html=True,
     )
     st.markdown("---")
@@ -318,8 +262,6 @@ with st.sidebar:
                 st.error(f"🚫 HTTP Hatası: {e.code}")
             except urllib.error.URLError as e:
                 st.error(f"🔌 Bağlantı Hatası: {e.reason}")
-            except TimeoutError:
-                st.error(f"⏱️ Zaman Aşımı ({REQUEST_TIMEOUT}s)")
             except Exception as e:
                 logger.error("Yükleme hatası", exc_info=True)
                 st.error(f"❌ Hata: {e}")
@@ -355,6 +297,14 @@ with st.sidebar:
         if group_options:
             selected_groups = st.multiselect("Grupları filtrele", group_options, default=None, key="group_filter")
 
+    # İstatistikler
+    st.markdown("---")
+    stats = vc.get_stats()
+    st.markdown(f"**👥 Toplam Ziyaret:** {stats['total_visits']}")
+    st.markdown(f"**👤 Tekil Ziyaretçi:** {stats['unique_visitors']}")
+    
+    last_visit = datetime.fromisoformat(stats['last_visit']).strftime("%d.%m.%Y %H:%M")
+    st.caption(f"Son Ziyaret: {last_visit}")
 
 # =====================================================================
 # ANA EKRAN
@@ -374,7 +324,7 @@ if not st.session_state.data.empty:
             | _safe_contains(df_display["Grup"], search_term)
         ]
 
-    # Metrikler (filtrelenmiş veriye göre)
+    # Metrikler
     mc1, mc2, mc3 = st.columns(3)
     mc1.metric("📺 Kanal", len(df_display))
     mc2.metric("📁 Grup", df_display["Grup"].nunique())
@@ -462,12 +412,12 @@ if not st.session_state.data.empty:
 
 else:
     st.markdown(
-        "<div style='text-align:center;padding:80px 20px;'>"
-        "<div style='font-size:4rem;margin-bottom:1rem;'>📺</div>"
-        "<h2 style='color:#f1f5f9;'>M3U Editör Pro</h2>"
-        "<p style='color:#94a3b8;font-size:1.1rem;max-width:500px;margin:1rem auto;'>"
-        "Sol menüden bir M3U linki yapıştırın ve TR kanallarını kolayca filtreleyin.</p>"
-        "</div>",
+        f"<div style='text-align:center;padding:80px 20px;'>"
+        f"<div style='font-size:4rem;margin-bottom:1rem;'>{PAGE_ICON}</div>"
+        f"<h2 style='color:#f1f5f9;'>{PAGE_TITLE}</h2>"
+        f"<p style='color:#94a3b8;font-size:1.1rem;max-width:500px;margin:1rem auto;'>"
+        f"Sol menüden bir M3U linki yapıştırın ve TR kanallarını kolayca filtreleyin.</p>"
+        f"</div>",
         unsafe_allow_html=True,
     )
 
@@ -476,7 +426,7 @@ st.markdown("---")
 st.markdown(
     "<div style='text-align:center;padding:15px;'>"
     "<p style='margin:0;font-size:0.8rem;color:#64748b;'>"
-    f"M3U Editör Pro | Streamlit {st.__version__} | Python {sys.version.split()[0]}</p>"
+    f"{PAGE_TITLE} v{APP_VERSION} | Streamlit {st.__version__} | Python {sys.version.split()[0]}</p>"
     "</div>",
     unsafe_allow_html=True,
 )
