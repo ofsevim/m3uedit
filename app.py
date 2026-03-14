@@ -207,6 +207,11 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
         var attempt = 0;
         var hasSucceeded = false;
         var CORS_RESTRICTED = {str(cors_restricted).lower()};
+        
+        console.log('--- IPTV Player Debug ---');
+        console.log('Original URL:', origUrl);
+        console.log('Local Proxy:', localProxyUrl);
+        console.log('CORS Status:', CORS_RESTRICTED ? 'Restricted' : 'Normal');
 
         function showStatus(msg, isPersistent) {{
             statusText.innerHTML = msg;
@@ -219,6 +224,7 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
 
         function startPlay(url, label) {{
             if (hasSucceeded) return;
+            console.log('Attempting:', label, url);
             showStatus('🔄 Kanal yükleniyor ' + (label || '') + '...', false);
             
             var lower = url.toLowerCase();
@@ -228,9 +234,15 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
                     hls.loadSource(url);
                     hls.attachMedia(player.tech().el());
                     hls.on(Hls.Events.MANIFEST_PARSED, function() {{ 
-                        hasSucceeded = true; hideStatus(); player.play().catch(e => {{}}); 
+                        console.log('HLS: Manifest Parsed');
+                        hasSucceeded = true; 
+                        hideStatus(); 
+                        player.play().catch(e => {{ console.error('Play error:', e); }}); 
                     }});
-                    hls.on(Hls.Events.ERROR, function(e, d) {{ if (d.fatal) tryNext(); }});
+                    hls.on(Hls.Events.ERROR, function(e, d) {{ 
+                        console.warn('HLS Error:', d.type, d.details, d.fatal);
+                        if (d.fatal) tryNext(); 
+                    }});
                 }} else {{
                     player.src({{ src: url, type: 'application/x-mpegURL' }});
                 }}
@@ -249,13 +261,18 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
         function tryNext() {{
             if (hasSucceeded) return;
             attempt++;
+            console.log('Retrying, attempt:', attempt);
             
-            if (attempt === 1 && CORS_RESTRICTED) {{
-                // Already tried local proxy or original, now try external or fallback
-                startPlay(externalProxies[0] + encodeURIComponent(origUrl), '(Global Proxy 1)');
+            if (attempt === 1) {{
+                // If we started with Local Proxy and it failed, try Direct.
+                // If we started with Direct (not possible now), try Proxy.
+                startPlay(origUrl, '(Doğrudan Bağlantı)');
             }} else if (attempt === 2) {{
+                startPlay(externalProxies[0] + encodeURIComponent(origUrl), '(Global Proxy 1)');
+            }} else if (attempt === 3) {{
                 startPlay(externalProxies[1] + encodeURIComponent(origUrl), '(Global Proxy 2)');
             }} else {{
+                console.error('All attempts failed.');
                 var failHtml = '🚫 Oynatılamadı (CORS veya Link Hatası)<br>' +
                     '<p style="font-size:0.8rem;color:#94a3b8;margin:5px 0 10px 0;">Güvenlik duvarı aşılamadı.</p>' +
                     '<button class="retry-btn" onclick="location.reload()" style="margin:5px;">🔄 Yeniden Dene</button>' +
@@ -268,17 +285,20 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
             }}
         }}
 
-        player.on('playing', function() {{ hasSucceeded = true; hideStatus(); }});
-        player.on('error', function() {{ tryNext(); }});
+        player.on('playing', function() {{ 
+            console.log('Player: Playing started');
+            hasSucceeded = true; 
+            hideStatus(); 
+        }});
+        player.on('error', function() {{ 
+            console.error('Player: Media Error', player.error());
+            tryNext(); 
+        }});
 
         if (!origUrl) {{ showStatus('⚠️ Geçersiz URL', true); }}
         else {{
-            // Strategic Start: If restricted, use Local Proxy immediately. If not, try direct.
-            if (CORS_RESTRICTED) {{
-                startPlay(localProxyUrl, '(Yerel Proxy Aktif)');
-            }} else {{
-                startPlay(origUrl, '');
-            }}
+            // AGGRESSIVE STRATEGY: Always try Local Proxy first.
+            startPlay(localProxyUrl, '(Yerel Proxy)');
         }}
 
         // Safety timeout
