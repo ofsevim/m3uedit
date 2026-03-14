@@ -72,6 +72,39 @@ def filter_channels(channels: List[Dict], only_tr: bool = False, keyword: str = 
         result = [ch for ch in result if ch.get("Grup", "") == group_filter]
     return result
 
+import concurrent.futures
+import urllib.request
+import ssl
+
+def check_channel_health(url: str, timeout: int = 5) -> bool:
+    """Tek bir kanalın sağlığını kontrol eder (HTTP GET)."""
+    if not url or not url.startswith("http"):
+        return False
+    try:
+        # SSL sertifika doğrulamasını bypass et (config'den bağımsız, kontrol amaçlı)
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+def batch_check_health(urls: List[str], max_workers: int = 10, timeout: int = 5) -> List[bool]:
+    """Birden fazla kanalın sağlığını paralel olarak kontrol eder."""
+    results = [False] * len(urls)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_index = {executor.submit(check_channel_health, url, timeout): i for i, url in enumerate(urls)}
+        for future in concurrent.futures.as_completed(future_to_index):
+            index = future_to_index[future]
+            try:
+                results[index] = future.result()
+            except Exception:
+                results[index] = False
+    return results
+
 def convert_df_to_m3u(df: pd.DataFrame) -> str:
     """Pandas DataFrame'i M3U formatına dönüştürür."""
     lines = ["#EXTM3U"]

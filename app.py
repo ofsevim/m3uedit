@@ -23,7 +23,7 @@ try:
     from utils.config import (
         PAGE_TITLE, PAGE_ICON, REQUEST_TIMEOUT, USER_AGENT, 
         DEFAULT_TR_FILTER, TABLE_HEIGHT, DISABLE_SSL_VERIFY,
-        APP_VERSION
+        APP_VERSION, HEALTH_CHECK_MAX_WORKERS, HEALTH_CHECK_TIMEOUT
     )
 except ImportError:
     PAGE_TITLE = "M3U Editör Pro"
@@ -34,6 +34,8 @@ except ImportError:
     TABLE_HEIGHT = 600
     DISABLE_SSL_VERIFY = True
     APP_VERSION = "2.0.0"
+    HEALTH_CHECK_MAX_WORKERS = 10
+    HEALTH_CHECK_TIMEOUT = 5
 
 # --- LOG ---
 if not logging.getLogger().hasHandlers():
@@ -49,7 +51,7 @@ st.set_page_config(
 )
 
 # --- YARDIMCI MODÜLLER ---
-from utils.parser import parse_m3u_lines, filter_channels, convert_df_to_m3u
+from utils.parser import parse_m3u_lines, filter_channels, convert_df_to_m3u, batch_check_health
 from utils.visitor_counter import VisitorCounter
 
 # --- CSS ---
@@ -285,7 +287,7 @@ with st.sidebar:
             elapsed = round(time.time() - start, 2)
             if filtered:
                 df = pd.DataFrame(filtered)
-                for col, default in [("LogoURL", ""), ("Tür", "")]:
+                for col, default in [("LogoURL", ""), ("Tür", ""), ("Durum", "❔ Bekliyor")]:
                     if col not in df.columns:
                         df[col] = default
                 st.session_state.data = df
@@ -344,10 +346,10 @@ if not st.session_state.data.empty:
 
     # --- Dışa Aktar & Link ---
     m3u_out = convert_df_to_m3u(df_display)
-    exp1, exp2 = st.columns(2)
+    exp1, exp2, exp3 = st.columns(3)
     with exp1:
         st.download_button(
-            label=f"📥 M3U İndir ({len(df_display)} kanal)",
+            label=f"📥 İndir ({len(df_display)})",
             data=m3u_out,
             file_name="iptv_listesi.m3u",
             mime="text/plain",
@@ -355,7 +357,7 @@ if not st.session_state.data.empty:
             use_container_width=True,
         )
     with exp2:
-        if st.button("🔗 M3U Link Oluştur", use_container_width=True):
+        if st.button("🔗 Link Oluştur", use_container_width=True):
             with st.spinner("Link oluşturuluyor..."):
                 link = create_m3u_link(m3u_out)
             if link:
@@ -363,6 +365,17 @@ if not st.session_state.data.empty:
                 st.success("Link hazır!")
             else:
                 st.error("Link oluşturulamadı.")
+    with exp3:
+        if st.button("🔍 Sağlık Kontrolü", use_container_width=True):
+            with st.spinner(f"Kanallar kontrol ediliyor ({len(df_display)})..."):
+                urls = df_display["URL"].tolist()
+                health_results = batch_check_health(urls, HEALTH_CHECK_MAX_WORKERS, HEALTH_CHECK_TIMEOUT)
+                
+                # Orijinal veriyi güncelle (URL eşleşmesine göre)
+                # Not: Liste çok büyükse optimize edilmeli, şimdilik basit tutuyoruz
+                for i, url in enumerate(urls):
+                    st.session_state.data.loc[st.session_state.data["URL"] == url, "Durum"] = "✅ Aktif" if health_results[i] else "❌ Pasif"
+                st.rerun()
 
     if st.session_state.get("m3u_link"):
         st.code(st.session_state.m3u_link, language=None)
@@ -409,11 +422,12 @@ if not st.session_state.data.empty:
         st.markdown("---")
 
     # --- Kanal Tablosu ---
-    display_cols = [c for c in ["Grup", "Kanal Adı", "URL", "Tür"] if c in df_display.columns]
+    display_cols = [c for c in ["Durum", "Grup", "Kanal Adı", "URL", "Tür"] if c in df_display.columns]
     st.dataframe(
         df_display[display_cols] if display_cols else df_display,
         use_container_width=True, hide_index=True, height=TABLE_HEIGHT,
         column_config={
+            "Durum": st.column_config.TextColumn("Durum", width="small"),
             "URL": st.column_config.TextColumn("URL", width="large"),
             "Tür": st.column_config.TextColumn("Tür", width="small"),
         },
