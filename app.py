@@ -489,12 +489,49 @@ if not st.session_state.data.empty:
                 st.error("Link oluşturulamadı.")
     with act3:
         if st.button("🔍 Sağlık Kontrolü", use_container_width=True):
-            with st.spinner("Kanallar taranıyor..."):
-                urls = df_display["URL"].tolist()
-                results = batch_check_health(urls, max_workers=HEALTH_CHECK_MAX_WORKERS, timeout=HEALTH_CHECK_TIMEOUT)
-                for i, u in enumerate(urls):
-                    st.session_state.data.loc[st.session_state.data["URL"] == u, "Durum"] = results[i]
-                st.rerun()
+            urls = df_display["URL"].tolist()
+            total = len(urls)
+
+            progress_bar = st.progress(0, text=f"🔍 Taranıyor... 0/{total}")
+            status_text = st.empty()
+            start_time = time.time()
+
+            def update_progress(completed, total_count):
+                pct = completed / total_count
+                elapsed = time.time() - start_time
+                speed = completed / elapsed if elapsed > 0 else 0
+                remaining = (total_count - completed) / speed if speed > 0 else 0
+                progress_bar.progress(
+                    pct, 
+                    text=f"🔍 {completed}/{total_count} — {pct:.0%} | ⏱️ ~{remaining:.0f}s kaldı"
+                )
+
+            results = batch_check_health(
+                urls, 
+                max_workers=50, 
+                timeout=3.0, 
+                progress_callback=update_progress
+            )
+
+            elapsed = round(time.time() - start_time, 1)
+
+            # Sonuçları ana veriye yaz
+            for i, u in enumerate(urls):
+                st.session_state.data.loc[st.session_state.data["URL"] == u, "Durum"] = results[i]
+
+            # İstatistik göster
+            aktif = sum(1 for r in results if "✅" in r)
+            oldu = sum(1 for r in results if "❌" in r)
+            diger = total - aktif - oldu
+
+            progress_bar.empty()
+            status_text.empty()
+            st.success(
+                f"✅ Tamamlandı ({elapsed}s) — "
+                f"🟢 {aktif} aktif | 🔴 {oldu} ölü | 🟡 {diger} belirsiz"
+            )
+            time.sleep(1.5)
+            st.rerun()
 
     if st.session_state.get("m3u_link"):
         st.code(st.session_state.m3u_link, language=None)

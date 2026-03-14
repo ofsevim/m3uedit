@@ -1,12 +1,26 @@
 import re
 import pandas as pd
-from typing import Iterable, List, Dict
+import concurrent.futures
+import urllib.request
+import urllib.error
+import socket
+import ssl
+import time
+import logging
+from typing import Iterable, List, Dict, Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 # Türk kanallar için regex pattern
 TR_PATTERN = re.compile(
     r"(\b|_|\[|\(|\|)(TR|TURK|TÜRK|TURKIYE|TÜRKİYE|YERLI|ULUSAL|ISTANBUL)(\b|_|\]|\)|\||:)",
     re.IGNORECASE,
 )
+
+# SSL - sertifika hatalarını atla
+_ssl_ctx = ssl.create_default_context()
+_ssl_ctx.check_hostname = False
+_ssl_ctx.verify_mode = ssl.CERT_NONE
 
 def parse_m3u_lines(iterator: Iterable) -> List[Dict]:
     """M3U satırlarını parse eder ve kanal listesi döndürür."""
@@ -72,61 +86,138 @@ def filter_channels(channels: List[Dict], only_tr: bool = False, keyword: str = 
         result = [ch for ch in result if ch.get("Grup", "") == group_filter]
     return result
 
-import concurrent.futures
-import urllib.request
-import ssl
-
-def check_channel_health(url: str, timeout: int = 3) -> str:
-    """Tek bir kanalın sağlığını kontrol eder (HTTP HEAD/GET).
-    Dönüş değerleri: '✅ Aktif', '⚠️ CORS Kısıtlı', '❌ Pasif'
+def _check_single_url(url: str, timeout: float = 3.0) -> str:
     """
-    if not url or not url.startswith("http"):
-        return "❌ Pasif"
+    Tek URL'yi mümkün olan en hızlı şekilde kontrol eder.
     
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    
-    # 1) Önce HEAD isteği (Hızlı)
+    Strateji:
+      1) HEAD isteği (body indirmez, çok hızlı)
+      2) HEAD 405 ise → kısa GET (sadece ilk 1KB)
+      3) Sonuca göre durum emoji döndür
+    """
+    if not url or not url.startswith(("http://", "https://")):
+        return "❌ Geçersiz"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; HealthCheck/1.0)",
+        "Connection": "close",      # Bağlantıyı hemen kapat
+        "Accept": "*/*",
+    }
+
+    # ── 1. HEAD İsteği (en hızlı) ──
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}, method="HEAD")
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-            if resp.status == 200:
-                # CORS kontrolü
-                cors = resp.getheader("Access-Control-Allow-Origin")
-                if cors == "*" or (cors and "null" not in cors):
+        req = urllib.request.Request(url, headers=headers, method="HEAD")
+        with urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx) as resp:
+            code = resp.status
+            content_type = (resp.getheader("Content-Type") or "").lower()
+
+            if code == 200:
+                if "mpegurl" in content_type or "video" in content_type or "octet-stream" in content_type:
                     return "✅ Aktif"
+                elif "text/html" in content_type:
+                    return "⚠️ Web Sayfası"
                 else:
-                    return "⚠️ CORS Kısıtlı"
+                    return "✅ Aktif"
+            elif code in (301, 302, 303, 307, 308):
+                return "🔀 Yönlendirme"
+            elif code == 403:
+                return "🔒 Yasaklı"
+            elif code == 404:
+                return "❌ Bulunamadı"
+            else:
+                return f"⚠️ HTTP {code}"
+
+    except urllib.error.HTTPError as e:
+        if e.code == 405:
+            # HEAD desteklenmiyor → kısa GET dene
+            pass
+        elif e.code == 403:
+            return "🔒 Yasaklı"
+        elif e.code == 404:
+            return "❌ Bulunamadı"
+        elif e.code == 401:
+            return "🔑 Yetki Gerekli"
+        else:
+            return f"⚠️ HTTP {e.code}"
+    except (urllib.error.URLError, socket.timeout, TimeoutError, OSError):
+        # HEAD başarısız → GET deneyelim
+        pass
     except Exception:
         pass
 
-    # 2) Fallback: GET isteği
+    # ── 2. Kısa GET İsteği (sadece ilk 1KB) ──
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}, method="GET")
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-            if resp.status == 200:
-                cors = resp.getheader("Access-Control-Allow-Origin")
-                if cors == "*" or (cors and "null" not in cors):
-                    return "✅ Aktif"
-                else:
-                    return "⚠️ CORS Kısıtlı"
-    except Exception:
-        pass
-        
-    return "❌ Pasif"
+        headers["Range"] = "bytes=0-1023"  # Sadece ilk 1KB
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx) as resp:
+            _ = resp.read(1024)  # Sadece 1KB oku
+            code = resp.status
+            if code in (200, 206):
+                return "✅ Aktif"
+            else:
+                return f"⚠️ HTTP {code}"
 
-def batch_check_health(urls: List[str], max_workers: int = 10, timeout: int = 5) -> List[str]:
-    """Birden fazla kanalın sağlığını paralel olarak kontrol eder."""
-    results = ["❌ Pasif"] * len(urls)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_index = {executor.submit(check_channel_health, url, timeout): i for i, url in enumerate(urls)}
-        for future in concurrent.futures.as_completed(future_to_index):
-            index = future_to_index[future]
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            return "🔒 CORS/Yasaklı"
+        return f"⚠️ HTTP {e.code}"
+    except (socket.timeout, TimeoutError):
+        return "⏱️ Zaman Aşımı"
+    except (urllib.error.URLError, OSError) as e:
+        reason = str(getattr(e, 'reason', e))
+        if "ssl" in reason.lower() or "certificate" in reason.lower():
+            return "🔒 SSL Hatası"
+        return "❌ Bağlantı Hatası"
+    except Exception:
+        return "❌ Hata"
+
+def batch_check_health(
+    urls: List[str],
+    max_workers: int = 50,
+    timeout: float = 3.0,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+) -> List[str]:
+    """
+    URL listesini paralel olarak kontrol eder.
+    """
+    total = len(urls)
+    if total == 0:
+        return []
+
+    # Worker sayısını URL sayısına göre ayarla
+    workers = min(max_workers, total)
+    results = ["❔ Bekliyor"] * total
+    completed = 0
+
+    def check_with_index(args):
+        nonlocal completed
+        idx, url = args
+        result = _check_single_url(url, timeout=timeout)
+        completed += 1
+        if progress_callback:
             try:
-                results[index] = future.result()
+                progress_callback(completed, total)
             except Exception:
-                results[index] = "❌ Pasif"
+                pass
+        return idx, result
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(check_with_index, (i, url)): i 
+            for i, url in enumerate(urls)
+        }
+
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                idx, result = future.result(timeout=timeout + 5)
+                results[idx] = result
+            except concurrent.futures.TimeoutError:
+                idx = futures[future]
+                results[idx] = "⏱️ Zaman Aşımı"
+            except Exception as e:
+                idx = futures[future]
+                results[idx] = "❌ Hata"
+
     return results
 
 def convert_df_to_m3u(df: pd.DataFrame) -> str:
