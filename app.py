@@ -56,7 +56,7 @@ from utils.visitor_counter import VisitorCounter
 from utils.proxy_server import LocalProxyServer
 
 @st.cache_resource
-def get_proxy_server_v3():
+def get_proxy_server_v2():
     server = LocalProxyServer()
     server.start()
     return server
@@ -414,7 +414,7 @@ if not st.session_state.data.empty:
         with pcol2:
             st.markdown(f"### ▶ {pc['name']}")
 
-            proxy_server = get_proxy_server_v3()
+            proxy_server = get_proxy_server_v2()
             player_url = proxy_server.get_player_url(pc["url"])
 
             # ✅ iframe olarak proxy sunucusundan player sayfasını yükle
