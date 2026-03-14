@@ -227,7 +227,16 @@ if "play_channel" not in st.session_state:
 
 # Ziyaretçi takibi
 if "visited" not in st.session_state:
-    vc.increment_visit(st.runtime.scriptrunner.add_script_run_ctx().id if hasattr(st.runtime.scriptrunner, "add_script_run_ctx") else None)
+    session_id = None
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        ctx = get_script_run_ctx()
+        if ctx:
+            session_id = ctx.session_id
+    except ImportError:
+        pass
+    
+    vc.increment_visit(session_id)
     st.session_state.visited = True
 
 # =====================================================================
