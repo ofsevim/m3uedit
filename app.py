@@ -120,10 +120,22 @@ def create_m3u_link(m3u_content: str) -> str:
         logger.error(f"M3U link oluşturma hatası: {e}", exc_info=True)
         return ""
 
+from utils.proxy_server import LocalProxyServer
+
+@st.cache_resource
+def get_proxy_server():
+    proxy = LocalProxyServer()
+    proxy.start()
+    return proxy
+
 def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool = False) -> str:
     url = (stream_url or "").replace("'", "\\'").replace('"', '\\"')
     h = str(height)
-    start_proxy_idx = 1 if cors_restricted else 0
+    
+    proxy_server = get_proxy_server()
+    local_proxy_url = proxy_server.get_proxy_url(stream_url) if stream_url else ""
+    
+    # Priority: Local Proxy (if restricted) > Original > External Proxies
     return f"""
     <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
     <link href="https://unpkg.com/@videojs/themes@1.0.1/dist/city/index.css" rel="stylesheet">
@@ -179,42 +191,37 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
             responsive: true,
             fluid: false,
             liveui: true,
-            preload: 'auto'
+            preload: 'auto',
+            userActions: {{ hotkeys: true }}
         }});
 
         var statusEl = document.getElementById('player-status');
-        var statusBox = document.getElementById('status-box');
         var statusText = document.getElementById('status-text');
         var origUrl = '{url}';
-        var proxies = [
-            '', 
+        var localProxyUrl = '{local_proxy_url}';
+        var externalProxies = [
             'https://api.allorigins.win/raw?url=',
             'https://corsproxy.io/?'
         ];
-        var currentIdx = {start_proxy_idx};
+        
+        var attempt = 0;
         var hasSucceeded = false;
+        var CORS_RESTRICTED = {str(cors_restricted).lower()};
 
         function showStatus(msg, isPersistent) {{
             statusText.innerHTML = msg;
             statusEl.style.display = 'flex';
-            if (isPersistent) {{
-                statusEl.classList.add('active');
-            }} else {{
-                statusEl.classList.remove('active');
-            }}
+            if (isPersistent) statusEl.classList.add('active');
+            else statusEl.classList.remove('active');
         }}
 
-        function hideStatus() {{
-            statusEl.style.display = 'none';
-        }}
+        function hideStatus() {{ statusEl.style.display = 'none'; }}
 
-        function startPlay(url) {{
+        function startPlay(url, label) {{
             if (hasSucceeded) return;
+            showStatus('🔄 Kanal yükleniyor ' + (label || '') + '...', false);
             
             var lower = url.toLowerCase();
-            var ctx = proxies[currentIdx] ? ' (CORS Proxy ' + currentIdx + ' aktif)' : '';
-            showStatus('🔄 Kanal yükleniyor' + ctx + '...', false);
-
             if (lower.includes('.m3u8') || lower.includes('/live/')) {{
                 if (Hls.isSupported()) {{
                     var hls = new Hls({{ enableWorker: true, lowLatencyMode: true }});
@@ -231,8 +238,7 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
                 if (mpegts.isSupported()) {{
                     var m = mpegts.createPlayer({{ type: 'mpegts', url: url, isLive: true }});
                     m.attachMediaElement(player.tech().el());
-                    m.load();
-                    m.play();
+                    m.load(); m.play();
                     hasSucceeded = true; hideStatus();
                 }}
             }} else {{
@@ -242,20 +248,22 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
 
         function tryNext() {{
             if (hasSucceeded) return;
-            currentIdx++;
-            if (currentIdx < proxies.length) {{
-                var nextUrl = proxies[currentIdx] + (proxies[currentIdx] ? encodeURIComponent(origUrl) : origUrl);
-                startPlay(nextUrl);
+            attempt++;
+            
+            if (attempt === 1 && CORS_RESTRICTED) {{
+                // Already tried local proxy or original, now try external or fallback
+                startPlay(externalProxies[0] + encodeURIComponent(origUrl), '(Global Proxy 1)');
+            }} else if (attempt === 2) {{
+                startPlay(externalProxies[1] + encodeURIComponent(origUrl), '(Global Proxy 2)');
             }} else {{
                 var failHtml = '🚫 Oynatılamadı (CORS veya Link Hatası)<br>' +
-                    '<p style="font-size:0.8rem;color:#94a3b8;margin:5px 0 10px 0;">Tarayıcı kısıtlaması nedeniyle açılamadı.</p>' +
+                    '<p style="font-size:0.8rem;color:#94a3b8;margin:5px 0 10px 0;">Güvenlik duvarı aşılamadı.</p>' +
                     '<button class="retry-btn" onclick="location.reload()" style="margin:5px;">🔄 Yeniden Dene</button>' +
                     '<button class="retry-btn" style="background:#10b981;margin:5px;" onclick="navigator.clipboard.writeText(\\''+origUrl+'\\');this.textContent=\\'✅ Kopyalandı!\\'">📋 URL Kopyala</button><br>' +
                     '<div style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;">' +
                         '<a href="vlc://' + origUrl + '" class="vlc-btn" style="margin:3px;">▶ VLC</a>' +
                         '<a href="potplayer://' + origUrl + '" class="vlc-btn" style="background:#334155;margin:3px;">▶ PotPlayer</a>' +
-                    '</div>' +
-                    '<p style="font-size:0.75rem;color:#64748b;margin-top:8px;">*Protocol handler yüklü olmalıdır.</p>';
+                    '</div>';
                 showStatus(failHtml, true);
             }}
         }}
@@ -264,12 +272,17 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
         player.on('error', function() {{ tryNext(); }});
 
         if (!origUrl) {{ showStatus('⚠️ Geçersiz URL', true); }}
-        else {{ 
-            var initialUrl = proxies[currentIdx] + (proxies[currentIdx] ? encodeURIComponent(origUrl) : origUrl);
-            startPlay(initialUrl); 
+        else {{
+            // Strategic Start: If restricted, use Local Proxy immediately. If not, try direct.
+            if (CORS_RESTRICTED) {{
+                startPlay(localProxyUrl, '(Yerel Proxy Aktif)');
+            }} else {{
+                startPlay(origUrl, '');
+            }}
         }}
 
-        setTimeout(function() {{ if (!hasSucceeded && currentIdx === {start_proxy_idx}) tryNext(); }}, 6000);
+        // Safety timeout
+        setTimeout(function() {{ if (!hasSucceeded && attempt === 0) tryNext(); }}, 8000);
     }})();
     </script>
     """
