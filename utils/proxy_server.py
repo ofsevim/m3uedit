@@ -5,13 +5,22 @@ import urllib.parse
 import threading
 import socket
 import logging
-import re
+import ssl
 
 logger = logging.getLogger(__name__)
 
+# SSL context for proxy to ignore certificate errors
+proxy_ssl_ctx = ssl.create_default_context()
+proxy_ssl_ctx.check_hostname = False
+proxy_ssl_ctx.verify_mode = ssl.CERT_NONE
+
+class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    """Multi-threaded HTTP server."""
+    allow_reuse_address = True
+    daemon_threads = True
+
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
-        # Suppress noisy logs
         pass
 
     def do_GET(self):
@@ -27,17 +36,16 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         if not target_url:
             self.send_response(400)
             self.end_headers()
-            self.wfile.write(b"Missing url parameter")
             return
 
         try:
             req = urllib.request.Request(target_url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, timeout=10, context=proxy_ssl_ctx) as response:
                 content = response.read()
                 content_type = response.getheader("Content-Type", "application/octet-stream")
                 
-                # Check if it's an M3U8 playlist that needs rewriting
-                if "application/vnd.apple.mpegurl" in content_type.lower() or target_url.lower().endswith(".m3u8"):
+                # Check for M3U8
+                if "application/vnd.apple.mpegurl" in content_type.lower() or target_url.lower().split("?")[0].endswith(".m3u8"):
                     content = self.rewrite_m3u8(content, target_url)
 
                 self.send_response(200)
@@ -45,35 +53,38 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
                 self.send_header("Access-Control-Allow-Headers", "*")
+                self.send_header("Cache-Control", "no-cache")
                 self.end_headers()
                 self.wfile.write(content)
         except Exception as e:
-            logger.error(f"Proxy error for {target_url}: {e}")
+            logger.error(f"Proxy fetch error: {e} for {target_url}")
             self.send_response(500)
             self.end_headers()
             self.wfile.write(str(e).encode())
 
     def rewrite_m3u8(self, content, base_url):
-        """Rewrites relative URLs in M3U8 to point back through the proxy."""
+        """Rewrites relative URLs in M3U8 using absolute proxy URLs."""
         lines = content.decode("utf-8", errors="ignore").splitlines()
         new_lines = []
         
-        # Determine the base directory of the current M3U8
+        # Determine the base directory
         base_parts = base_url.rsplit("/", 1)
         base_dir = base_parts[0] + "/" if len(base_parts) > 1 else ""
+        
+        # Get our own host and port
+        host, port = self.server.server_address
 
         for line in lines:
             line = line.strip()
             if not line or line.startswith("#"):
                 new_lines.append(line)
             else:
-                # This is a URL (segment or sub-playlist)
                 abs_url = line
                 if not line.startswith("http"):
                     abs_url = urllib.parse.urljoin(base_dir, line)
                 
-                # Point it back to our proxy
-                proxy_url = f"/proxy?url={urllib.parse.quote(abs_url)}"
+                # Use ABSOLUTE URL for the proxy to avoid relative path issues in iframes
+                proxy_url = f"http://{host}:{port}/proxy?url={urllib.parse.quote(abs_url)}"
                 new_lines.append(proxy_url)
         
         return "\n".join(new_lines).encode("utf-8")
@@ -98,10 +109,11 @@ class LocalProxyServer:
 
     def start(self):
         handler = ProxyHandler
-        self.server = socketserver.TCPServer(("127.0.0.1", self.port), handler)
+        # Using 127.0.0.1 for maximum local compatibility
+        self.server = ThreadingTCPServer(("127.0.0.1", self.port), handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
-        logger.info(f"Local CORS Proxy started on port {self.port}")
+        logger.info(f"Local CORS Proxy (Threaded) started on port {self.port}")
         return self.port
 
     def stop(self):
