@@ -248,8 +248,14 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
                 startPlay(nextUrl);
             }} else {{
                 var failHtml = '🚫 Oynatılamadı (CORS veya Link Hatası)<br>' +
-                    '<button class="retry-btn" onclick="location.reload()">🔄 Yeniden Dene</button><br>' +
-                    '<a href="vlc://' + origUrl + '" class="vlc-btn">▶ VLC ile Aç</a>';
+                    '<p style="font-size:0.8rem;color:#94a3b8;margin:5px 0 10px 0;">Tarayıcı kısıtlaması nedeniyle açılamadı.</p>' +
+                    '<button class="retry-btn" onclick="location.reload()" style="margin:5px;">🔄 Yeniden Dene</button>' +
+                    '<button class="retry-btn" style="background:#10b981;margin:5px;" onclick="navigator.clipboard.writeText(\\''+origUrl+'\\');this.textContent=\\'✅ Kopyalandı!\\'">📋 URL Kopyala</button><br>' +
+                    '<div style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;">' +
+                        '<a href="vlc://' + origUrl + '" class="vlc-btn" style="margin:3px;">▶ VLC</a>' +
+                        '<a href="potplayer://' + origUrl + '" class="vlc-btn" style="background:#334155;margin:3px;">▶ PotPlayer</a>' +
+                    '</div>' +
+                    '<p style="font-size:0.75rem;color:#64748b;margin-top:8px;">*Protocol handler yüklü olmalıdır.</p>';
                 showStatus(failHtml, true);
             }}
         }}
@@ -484,9 +490,22 @@ if not st.session_state.data.empty:
             cors_restricted = "CORS" in pc.get("durum", "")
             components.html(render_live_player(pc["url"], height=380, cors_restricted=cors_restricted), height=420)
 
-        if st.button("⏹ Durdur", use_container_width=True):
-            st.session_state.play_channel = None
-            st.rerun()
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("⏹ Durdur", use_container_width=True):
+                st.session_state.play_channel = None
+                st.rerun()
+        with col2:
+            # Tek kanal için M3U oluştur (Harici oynatıcılar için en garanti yöntem)
+            single_m3u = f"#EXTM3U\n#EXTINF:-1,{pc['name']}\n{pc['url']}"
+            st.download_button(
+                "📥 Harici Oynatıcı (M3U)", 
+                data=single_m3u, 
+                file_name=f"{pc['name']}.m3u", 
+                type="secondary", 
+                use_container_width=True,
+                help="VLC veya PotPlayer ile açmak için bu dosyayı indirin ve tıklayın."
+            )
         st.markdown("---")
 
     # --- Kanal Tablosu ---
