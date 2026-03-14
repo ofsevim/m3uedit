@@ -76,17 +76,28 @@ import concurrent.futures
 import urllib.request
 import ssl
 
-def check_channel_health(url: str, timeout: int = 5) -> bool:
-    """Tek bir kanalın sağlığını kontrol eder (HTTP GET)."""
+def check_channel_health(url: str, timeout: int = 3) -> bool:
+    """Tek bir kanalın sağlığını kontrol eder (HTTP HEAD/GET)."""
     if not url or not url.startswith("http"):
         return False
+    
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    
+    # 1) Önce HEAD isteği (Hızlı)
     try:
-        # SSL sertifika doğrulamasını bypass et (config'den bağımsız, kontrol amaçlı)
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}, method="HEAD")
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            if resp.status == 200:
+                return True
+    except Exception:
+        pass
+
+    # 2) Fallback: GET isteği (Bazı sunucular HEAD desteklemez)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}, method="GET")
+        # Sadece ilk birkaç byte'ı okumak yeterli
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
             return resp.status == 200
     except Exception:

@@ -65,10 +65,10 @@ MAX_FILE_SIZE_MB = 50
 # === URL SAĞLIK KONTROLÜ ===
 
 # Paralel kontrol için maksimum iş parçacığı sayısı
-HEALTH_CHECK_MAX_WORKERS = 10
+HEALTH_CHECK_MAX_WORKERS = 30
 
 # Sağlık kontrolü zaman aşımı (saniye)
-HEALTH_CHECK_TIMEOUT = 5
+HEALTH_CHECK_TIMEOUT = 3
 
 # Varsayılan kontrol edilecek maksimum kanal sayısı
 HEALTH_CHECK_MAX_CHANNELS = 50
