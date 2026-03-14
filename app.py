@@ -21,7 +21,7 @@ if current_dir not in sys.path:
 # --- YAPILANDIRMA ---
 try:
     from utils.config import (
-        PAGE_TITLE, PAGE_ICON, REQUEST_TIMEOUT, USER_AGENT, 
+        PAGE_TITLE, PAGE_ICON, REQUEST_TIMEOUT, USER_AGENT,
         DEFAULT_TR_FILTER, TABLE_HEIGHT, DISABLE_SSL_VERIFY,
         APP_VERSION, HEALTH_CHECK_MAX_WORKERS, HEALTH_CHECK_TIMEOUT
     )
@@ -53,6 +53,7 @@ st.set_page_config(
 # --- YARDIMCI MODÜLLER ---
 from utils.parser import parse_m3u_lines, filter_channels, convert_df_to_m3u, batch_check_health
 from utils.visitor_counter import VisitorCounter
+from utils.proxy_server import LocalProxyServer
 
 # --- CSS ---
 def _load_css():
@@ -65,6 +66,7 @@ def _load_css():
 
 _load_css()
 
+
 # --- SSL CONTEXT ---
 def _create_ssl_context():
     ctx = ssl.create_default_context()
@@ -73,8 +75,17 @@ def _create_ssl_context():
         ctx.verify_mode = ssl.CERT_NONE
     return ctx
 
+
 # --- SİSTEMLER ---
 vc = VisitorCounter()
+
+
+@st.cache_resource
+def get_proxy_server():
+    proxy = LocalProxyServer()
+    proxy.start()
+    return proxy
+
 
 # =====================================================================
 # YARDIMCI FONKSİYONLAR
@@ -83,8 +94,11 @@ vc = VisitorCounter()
 def _safe_contains(series: pd.Series, term: str) -> pd.Series:
     return series.astype(str).str.contains(term, case=False, na=False)
 
+
 def create_m3u_link(m3u_content: str) -> str:
     """Filtrelenmiş M3U içeriğini paste servisine yükleyip raw link döndürür."""
+    ctx = _create_ssl_context()
+
     # 1) paste.rs
     try:
         req = urllib.request.Request(
@@ -92,7 +106,7 @@ def create_m3u_link(m3u_content: str) -> str:
             data=m3u_content.encode("utf-8"),
             headers={"User-Agent": USER_AGENT, "Content-Type": "text/plain"},
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
             paste_url = resp.read().decode("utf-8").strip()
             if paste_url.startswith("http"):
                 return paste_url
@@ -111,7 +125,7 @@ def create_m3u_link(m3u_content: str) -> str:
             data=data,
             headers={"User-Agent": USER_AGENT},
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
             paste_url = resp.read().decode("utf-8").strip().strip('"')
             if not paste_url.endswith(".txt"):
                 paste_url = paste_url.rstrip("/") + ".txt"
@@ -120,58 +134,50 @@ def create_m3u_link(m3u_content: str) -> str:
         logger.error(f"M3U link oluşturma hatası: {e}", exc_info=True)
         return ""
 
-from utils.proxy_server import LocalProxyServer
-
-@st.cache_resource
-def get_proxy_server():
-    proxy = LocalProxyServer()
-    proxy.start()
-    return proxy
 
 def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool = False) -> str:
     url = (stream_url or "").replace("'", "\\'").replace('"', '\\"')
     h = str(height)
-    
+
     proxy_server = get_proxy_server()
     local_proxy_url = proxy_server.get_proxy_url(stream_url) if stream_url else ""
-    
-    # Priority: Local Proxy (if restricted) > Original > External Proxies
+
     return f"""
     <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
     <link href="https://unpkg.com/@videojs/themes@1.0.1/dist/city/index.css" rel="stylesheet">
     <style>
-        .player-container {{ 
-            position: relative; width: 100%; height: {h}px; background: #000; 
-            border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); 
+        .player-container {{
+            position: relative; width: 100%; height: {h}px; background: #000;
+            border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);
         }}
         .video-js {{ width: 100%; height: 100%; }}
-        .vjs-city .vjs-big-play-button {{ 
+        .vjs-city .vjs-big-play-button {{
             left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important;
             margin: 0 !important; width: 2.5em !important; height: 2.5em !important; border-radius: 50% !important;
         }}
-        #player-status {{ 
-            position: absolute; top: 0; left: 0; right: 0; bottom: 0; 
-            display: flex; align-items: center; justify-content: center; 
+        #player-status {{
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            display: flex; align-items: center; justify-content: center;
             z-index: 20; pointer-events: none; text-align: center; color: #fff;
         }}
         #player-status.active {{ background: rgba(0,0,0,0.6); pointer-events: auto; }}
-        #player-status .msg-box {{ 
-            background: rgba(15, 23, 42, 0.9); padding: 20px 30px; border-radius: 16px; 
+        #player-status .msg-box {{
+            background: rgba(15, 23, 42, 0.9); padding: 20px 30px; border-radius: 16px;
             font-size: 0.95rem; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(8px);
         }}
-        .retry-btn {{ 
-            margin-top: 15px; padding: 10px 20px; background: #3b82f6; color: white; 
+        .retry-btn {{
+            margin-top: 15px; padding: 10px 20px; background: #3b82f6; color: white;
             border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600;
         }}
-        .vlc-btn {{ 
-            margin-top: 10px; padding: 10px 20px; background: #ef4444; color: white; 
-            border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; text-decoration: none; display: inline-block;
+        .vlc-btn {{
+            margin-top: 10px; padding: 10px 20px; background: #ef4444; color: white;
+            border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem;
+            font-weight: 600; text-decoration: none; display: inline-block;
         }}
     </style>
 
     <div class="player-container">
-        <video id="iptv-player" class="video-js vjs-theme-city vjs-big-play-centered">
-        </video>
+        <video id="iptv-player" class="video-js vjs-theme-city vjs-big-play-centered"></video>
         <div id="player-status">
             <div class="msg-box" id="status-box">
                 <div id="status-text">⏳ Başlatılıyor...</div>
@@ -203,15 +209,12 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
             'https://api.allorigins.win/raw?url=',
             'https://corsproxy.io/?'
         ];
-        
+
         var attempt = 0;
         var hasSucceeded = false;
-        var CORS_RESTRICTED = {str(cors_restricted).lower()};
-        
-        console.log('--- IPTV Player Debug ---');
-        console.log('Original URL:', origUrl);
-        console.log('Local Proxy:', localProxyUrl);
-        console.log('CORS Status:', CORS_RESTRICTED ? 'Restricted' : 'Normal');
+        var retrying = false;           // ✅ Race condition kilidi
+        var currentHls = null;          // ✅ Aktif HLS instance referansı
+        var currentMpegts = null;       // ✅ Aktif mpegts instance referansı
 
         function showStatus(msg, isPersistent) {{
             statusText.innerHTML = msg;
@@ -222,90 +225,129 @@ def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool
 
         function hideStatus() {{ statusEl.style.display = 'none'; }}
 
+        // ✅ Eski player instance'larını temizle
+        function cleanup() {{
+            if (currentHls) {{
+                try {{ currentHls.destroy(); }} catch(e) {{}}
+                currentHls = null;
+            }}
+            if (currentMpegts) {{
+                try {{ currentMpegts.unload(); currentMpegts.detachMediaElement(); currentMpegts.destroy(); }} catch(e) {{}}
+                currentMpegts = null;
+            }}
+            try {{ player.reset(); }} catch(e) {{}}
+        }}
+
         function startPlay(url, label) {{
             if (hasSucceeded) return;
-            console.log('Attempting:', label, url);
-            showStatus('🔄 Kanal yükleniyor ' + (label || '') + '...', false);
-            
+            cleanup();                   // ✅ Önce eskiyi temizle
+            console.log('Attempt ' + attempt + ':', label, url);
+            showStatus('🔄 ' + (label || 'Yükleniyor...'), false);
+
             var lower = url.toLowerCase();
-            if (lower.includes('.m3u8') || lower.includes('/live/')) {{
-                if (Hls.isSupported()) {{
-                    var hls = new Hls({{ enableWorker: true, lowLatencyMode: true }});
+            var mediaEl = player.tech({{ IWillNotUseThisInPlugins: true }}).el();
+
+            if (lower.includes('.m3u8') || lower.includes('m3u8') || lower.includes('/live/')) {{
+                if (Hls && Hls.isSupported()) {{
+                    var hls = new Hls({{
+                        enableWorker: true,
+                        lowLatencyMode: true,
+                        xhrSetup: function(xhr) {{
+                            xhr.timeout = 10000;
+                        }}
+                    }});
+                    currentHls = hls;   // ✅ Referansı sakla
                     hls.loadSource(url);
-                    hls.attachMedia(player.tech().el());
-                    hls.on(Hls.Events.MANIFEST_PARSED, function() {{ 
-                        console.log('HLS: Manifest Parsed');
-                        hasSucceeded = true; 
-                        hideStatus(); 
-                        player.play().catch(e => {{ console.error('Play error:', e); }}); 
+                    hls.attachMedia(mediaEl);
+                    hls.on(Hls.Events.MANIFEST_PARSED, function() {{
+                        hasSucceeded = true;
+                        hideStatus();
+                        mediaEl.play().catch(function(e) {{ console.warn('Autoplay blocked:', e); }});
                     }});
-                    hls.on(Hls.Events.ERROR, function(e, d) {{ 
-                        console.warn('HLS Error:', d.type, d.details, d.fatal);
-                        if (d.fatal) tryNext(); 
+                    hls.on(Hls.Events.ERROR, function(e, d) {{
+                        console.warn('HLS Error:', d.type, d.details, 'fatal:', d.fatal);
+                        if (d.fatal) tryNext();
                     }});
-                }} else {{
-                    player.src({{ src: url, type: 'application/x-mpegURL' }});
+                }} else if (mediaEl.canPlayType('application/vnd.apple.mpegURL')) {{
+                    // Safari native HLS
+                    mediaEl.src = url;
+                    mediaEl.addEventListener('loadedmetadata', function() {{
+                        hasSucceeded = true;
+                        hideStatus();
+                        mediaEl.play().catch(function(e){{}});
+                    }}, {{ once: true }});
+                    mediaEl.addEventListener('error', function() {{ tryNext(); }}, {{ once: true }});
                 }}
             }} else if (lower.includes('.ts')) {{
-                if (mpegts.isSupported()) {{
+                if (typeof mpegts !== 'undefined' && mpegts.isSupported()) {{
                     var m = mpegts.createPlayer({{ type: 'mpegts', url: url, isLive: true }});
-                    m.attachMediaElement(player.tech().el());
-                    m.load(); m.play();
-                    hasSucceeded = true; hideStatus();
+                    currentMpegts = m;  // ✅ Referansı sakla
+                    m.attachMediaElement(mediaEl);
+                    m.load();
+                    m.play();
+                    m.on(mpegts.Events.ERROR, function() {{ tryNext(); }});
+                    mediaEl.addEventListener('playing', function() {{
+                        hasSucceeded = true;
+                        hideStatus();
+                    }}, {{ once: true }});
                 }}
             }} else {{
                 player.src({{ src: url, type: 'video/mp4' }});
+                player.play().catch(function() {{ tryNext(); }});
             }}
         }}
 
         function tryNext() {{
-            if (hasSucceeded) return;
+            if (hasSucceeded || retrying) return;  // ✅ Race condition koruması
+            retrying = true;
             attempt++;
-            console.log('Retrying, attempt:', attempt);
-            
-            if (attempt === 1) {{
-                // If we started with Local Proxy and it failed, try Direct.
-                // If we started with Direct (not possible now), try Proxy.
-                startPlay(origUrl, '(Doğrudan Bağlantı)');
-            }} else if (attempt === 2) {{
-                startPlay(externalProxies[0] + encodeURIComponent(origUrl), '(Global Proxy 1)');
-            }} else if (attempt === 3) {{
-                startPlay(externalProxies[1] + encodeURIComponent(origUrl), '(Global Proxy 2)');
-            }} else {{
-                console.error('All attempts failed.');
-                var failHtml = '🚫 Oynatılamadı (CORS veya Link Hatası)<br>' +
-                    '<p style="font-size:0.8rem;color:#94a3b8;margin:5px 0 10px 0;">Güvenlik duvarı aşılamadı.</p>' +
-                    '<button class="retry-btn" onclick="location.reload()" style="margin:5px;">🔄 Yeniden Dene</button>' +
-                    '<button class="retry-btn" style="background:#10b981;margin:5px;" onclick="navigator.clipboard.writeText(\\''+origUrl+'\\');this.textContent=\\'✅ Kopyalandı!\\'">📋 URL Kopyala</button><br>' +
-                    '<div style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;">' +
+
+            setTimeout(function() {{  // ✅ Mikro gecikme ile debounce
+                retrying = false;
+
+                if (attempt === 1) {{
+                    startPlay(origUrl, 'Doğrudan Bağlantı');
+                }} else if (attempt === 2) {{
+                    startPlay(externalProxies[0] + encodeURIComponent(origUrl), 'Global Proxy 1');
+                }} else if (attempt === 3) {{
+                    startPlay(externalProxies[1] + encodeURIComponent(origUrl), 'Global Proxy 2');
+                }} else {{
+                    var failHtml = '🚫 Oynatılamadı<br>' +
+                        '<p style="font-size:0.8rem;color:#94a3b8;margin:5px 0 10px 0;">Tüm yöntemler denendi.</p>' +
+                        '<button class="retry-btn" onclick="location.reload()" style="margin:5px;">🔄 Tekrar</button>' +
+                        '<button class="retry-btn" style="background:#10b981;margin:5px;" ' +
+                        'onclick="navigator.clipboard.writeText(\\'' + origUrl + '\\');this.textContent=\\'✅ Kopyalandı!\\'">📋 URL Kopyala</button><br>' +
+                        '<div style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;">' +
                         '<a href="vlc://' + origUrl + '" class="vlc-btn" style="margin:3px;">▶ VLC</a>' +
                         '<a href="potplayer://' + origUrl + '" class="vlc-btn" style="background:#334155;margin:3px;">▶ PotPlayer</a>' +
-                    '</div>';
-                showStatus(failHtml, true);
-            }}
+                        '</div>';
+                    showStatus(failHtml, true);
+                }}
+            }}, 300);
         }}
 
-        player.on('playing', function() {{ 
-            console.log('Player: Playing started');
-            hasSucceeded = true; 
-            hideStatus(); 
+        player.on('playing', function() {{
+            hasSucceeded = true;
+            hideStatus();
         }});
-        player.on('error', function() {{ 
-            console.error('Player: Media Error', player.error());
-            tryNext(); 
+        player.on('error', function() {{
+            if (!hasSucceeded) tryNext();
         }});
 
-        if (!origUrl) {{ showStatus('⚠️ Geçersiz URL', true); }}
-        else {{
-            // AGGRESSIVE STRATEGY: Always try Local Proxy first.
-            startPlay(localProxyUrl, '(Yerel Proxy)');
+        if (!origUrl) {{
+            showStatus('⚠️ Geçersiz URL', true);
+        }} else {{
+            startPlay(localProxyUrl, 'Yerel Proxy');
         }}
 
         // Safety timeout
-        setTimeout(function() {{ if (!hasSucceeded && attempt === 0) tryNext(); }}, 8000);
+        setTimeout(function() {{
+            if (!hasSucceeded && attempt === 0) tryNext();
+        }}, 10000);
     }})();
     </script>
     """
+
 
 # =====================================================================
 # SESSION STATE
@@ -326,7 +368,6 @@ if "visited" not in st.session_state:
             session_id = ctx.session_id
     except ImportError:
         pass
-    
     vc.increment_visit(session_id)
     st.session_state.visited = True
 
@@ -382,13 +423,14 @@ with st.sidebar:
                     if col not in df.columns:
                         df[col] = default
                 st.session_state.data = df
+                st.session_state.play_channel = None  # ✅ Yeni liste yüklendiğinde eski oynatmayı sıfırla
                 st.success(f"✅ {len(filtered)} kanal bulundu ({elapsed}s)")
             else:
                 st.warning("⚠️ Kanal bulunamadı.")
 
     st.markdown("---")
 
-    # Filtreler (veri yüklendiyse)
+    # Filtreler
     selected_groups = []
     if not st.session_state.data.empty:
         st.markdown("#### ⚙️ Filtre")
@@ -399,14 +441,15 @@ with st.sidebar:
         if group_options:
             selected_groups = st.multiselect("Grupları filtrele", group_options, default=None, key="group_filter")
 
-
     # İstatistikler
     st.markdown("---")
     stats = vc.get_stats()
     st.markdown(f"**👥 Toplam Ziyaret:** {stats['total_visits']}")
     st.markdown(f"**👤 Tekil Ziyaretçi:** {stats['unique_visitors']}")
-    
-    last_visit = datetime.fromisoformat(stats['last_visit']).strftime("%d.%m.%Y %H:%M")
+    try:
+        last_visit = datetime.fromisoformat(stats['last_visit']).strftime("%d.%m.%Y %H:%M")
+    except (ValueError, KeyError):
+        last_visit = "—"
     st.caption(f"Son Ziyaret: {last_visit}")
 
 # =====================================================================
@@ -427,16 +470,15 @@ if not st.session_state.data.empty:
             | _safe_contains(df_display["Grup"], search_term)
         ]
 
-    # Metrikler (filtrelenmiş veriye göre)
+    # Metrikler
     mc1, mc2, mc3 = st.columns(3)
     mc1.metric("📺 Kanal", len(df_display))
     mc2.metric("📁 Grup", df_display["Grup"].nunique())
     hls_count = int((df_display["Tür"] == "HLS").sum()) if "Tür" in df_display.columns else 0
     mc3.metric("📡 HLS", hls_count)
-
     st.caption(f"Gösterilen: {len(df_display)} / {len(st.session_state.data)} kanal")
 
-    # --- İşlemler Row ---
+    # --- İşlemler ---
     m3u_out = convert_df_to_m3u(df_display)
     act1, act2, act3 = st.columns(3)
     with act1:
@@ -462,10 +504,8 @@ if not st.session_state.data.empty:
             with st.spinner("Kanallar taranıyor..."):
                 urls = df_display["URL"].tolist()
                 results = batch_check_health(urls, max_workers=HEALTH_CHECK_MAX_WORKERS, timeout=HEALTH_CHECK_TIMEOUT)
-                
-                # Sadece filtrelenmiş veriyi değil, ana verideki ilgili URL'leri güncelle
-                for i, url in enumerate(urls):
-                    st.session_state.data.loc[st.session_state.data["URL"] == url, "Durum"] = results[i]
+                for i, u in enumerate(urls):
+                    st.session_state.data.loc[st.session_state.data["URL"] == u, "Durum"] = results[i]
                 st.rerun()
 
     if st.session_state.get("m3u_link"):
@@ -474,37 +514,63 @@ if not st.session_state.data.empty:
 
     # --- Canlı Oynatıcı ---
     st.markdown("### 🎬 Canlı Oynatıcı")
-    
-    # Seçenekleri "Durum - Kanal Adı" formatında hazırla
-    play_options_map = {}
-    for _, row in df_display.iterrows():
-        durum = row.get("Durum", "").split(" ")[0] if "Durum" in row else "❔"
-        display_name = f"{durum} {row['Kanal Adı']}"
-        play_options_map[display_name] = row['Kanal Adı']
-        
+
+    # ✅ FIX: Unique display names (index ekleyerek duplicate önleme)
+    play_options = []      # display name listesi
+    play_url_map = {}      # display_name → {name, url, logo, group, durum}
+
+    for idx, row in df_display.iterrows():
+        durum = row.get("Durum", "❔").split(" ")[0] if "Durum" in row else "❔"
+        base_name = f"{durum} {row['Kanal Adı']}"
+
+        # ✅ Duplicate isim varsa sayaç ekle
+        display_name = base_name
+        counter = 2
+        while display_name in play_url_map:
+            display_name = f"{base_name} ({counter})"
+            counter += 1
+
+        play_options.append(display_name)
+        play_url_map[display_name] = {
+            "name": row["Kanal Adı"],
+            "url": row["URL"],
+            "logo": row.get("LogoURL", ""),
+            "group": row.get("Grup", ""),
+            "durum": row.get("Durum", ""),
+        }
+
+    # ✅ FIX: Selectbox doğru index ile — rerun sonrası seçim korunuyor
+    current_play = st.session_state.get("play_channel")
+    default_index = 0  # "Seçiniz..."
+    if current_play:
+        # Şu an oynayan kanalı bul ve index'ini ayarla
+        for i, opt in enumerate(play_options):
+            info = play_url_map[opt]
+            if info["name"] == current_play.get("name") and info["url"] == current_play.get("url"):
+                default_index = i + 1  # +1 çünkü "Seçiniz..." 0. index
+                break
+
     play_name_display = st.selectbox(
-        "Oynatılacak Kanal", 
-        options=["Seçiniz..."] + list(play_options_map.keys()),
-        index=0,
+        "Oynatılacak Kanal",
+        options=["Seçiniz..."] + play_options,
+        index=default_index,
         key="play_select_auto"
     )
 
+    # ✅ FIX: Gereksiz rerun kaldırıldı — sadece state güncelleniyor
     if play_name_display != "Seçiniz...":
-        real_name = play_options_map[play_name_display]
-        current_playing = st.session_state.get("play_channel", {})
-        
-        # Eğer zaten bu kanal oynamıyorsa state'i güncelle
-        if not current_playing or current_playing.get("name") != real_name:
-            row = df_display[df_display["Kanal Adı"] == real_name]
-            if not row.empty:
-                st.session_state.play_channel = {
-                    "name": real_name,
-                    "url": row.iloc[0]["URL"],
-                    "logo": row.iloc[0].get("LogoURL", ""),
-                    "group": row.iloc[0].get("Grup", ""),
-                    "durum": row.iloc[0].get("Durum", ""),
-                }
+        selected_info = play_url_map.get(play_name_display)
+        if selected_info:
+            current = st.session_state.get("play_channel")
+            # Sadece farklı bir kanal seçildiyse güncelle
+            if not current or current.get("url") != selected_info["url"] or current.get("name") != selected_info["name"]:
+                st.session_state.play_channel = selected_info
                 st.rerun()
+    else:
+        # "Seçiniz..." seçildi ve oynatılan kanal varsa durdur
+        if st.session_state.play_channel:
+            st.session_state.play_channel = None
+            st.rerun()
 
     if st.session_state.play_channel:
         pc = st.session_state.play_channel
@@ -515,13 +581,20 @@ if not st.session_state.data.empty:
                     st.image(pc["logo"], width=120)
                 except Exception:
                     pass
-            st.markdown(f"<span style='color:#94a3b8;'>Grup:</span> <span style='color:#f1f5f9;font-weight:600;'>{pc.get('group', '')}</span>", unsafe_allow_html=True)
+            st.markdown(
+                f"<span style='color:#94a3b8;'>Grup:</span> "
+                f"<span style='color:#f1f5f9;font-weight:600;'>{pc.get('group', '')}</span>",
+                unsafe_allow_html=True,
+            )
             if "CORS" in pc.get("durum", ""):
-                st.warning("⚠️ CORS Kısıtlı Kanal: Proxy kullanılıyor.")
+                st.warning("⚠️ CORS Kısıtlı — Proxy aktif.")
         with pcol2:
             st.markdown(f"### ▶ {pc['name']}")
             cors_restricted = "CORS" in pc.get("durum", "")
-            components.html(render_live_player(pc["url"], height=380, cors_restricted=cors_restricted), height=420)
+            components.html(
+                render_live_player(pc["url"], height=380, cors_restricted=cors_restricted),
+                height=420,
+            )
 
         col1, col2 = st.columns(2)
         with col1:
@@ -529,15 +602,14 @@ if not st.session_state.data.empty:
                 st.session_state.play_channel = None
                 st.rerun()
         with col2:
-            # Tek kanal için M3U oluştur (Harici oynatıcılar için en garanti yöntem)
             single_m3u = f"#EXTM3U\n#EXTINF:-1,{pc['name']}\n{pc['url']}"
             st.download_button(
-                "📥 Harici Oynatıcı (M3U)", 
-                data=single_m3u, 
-                file_name=f"{pc['name']}.m3u", 
-                type="secondary", 
+                "📥 Harici Oynatıcı (M3U)",
+                data=single_m3u,
+                file_name=f"{pc['name']}.m3u",
+                type="secondary",
                 use_container_width=True,
-                help="VLC veya PotPlayer ile açmak için bu dosyayı indirin ve tıklayın."
+                help="VLC veya PotPlayer ile açmak için indirin.",
             )
         st.markdown("---")
 
@@ -545,7 +617,9 @@ if not st.session_state.data.empty:
     display_cols = [c for c in ["Durum", "Grup", "Kanal Adı", "URL", "Tür"] if c in df_display.columns]
     st.dataframe(
         df_display[display_cols] if display_cols else df_display,
-        use_container_width=True, hide_index=True, height=TABLE_HEIGHT,
+        use_container_width=True,
+        hide_index=True,
+        height=TABLE_HEIGHT,
         column_config={
             "URL": st.column_config.TextColumn("URL", width="large"),
             "Tür": st.column_config.TextColumn("Tür", width="small"),
