@@ -53,6 +53,13 @@ st.set_page_config(
 # --- YARDIMCI MODÜLLER ---
 from utils.parser import parse_m3u_lines, filter_channels, convert_df_to_m3u, batch_check_health
 from utils.visitor_counter import VisitorCounter
+from utils.proxy_server import LocalProxyServer
+
+@st.cache_resource
+def get_proxy_server():
+    server = LocalProxyServer()
+    server.start()
+    return server
 
 # --- CSS ---
 def _load_css():
@@ -128,209 +135,242 @@ def create_m3u_link(m3u_content: str) -> str:
 
 
 def render_live_player(stream_url: str, height: int = 420) -> str:
-    url = (stream_url or "").replace("'", "\\'").replace('"', '\\"')
+    url = (stream_url or "").replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
     h = str(height)
+
+    # Yerel proxy base URL
+    proxy_server = get_proxy_server()
+    local_proxy_base = f"http://127.0.0.1:{proxy_server.port}/proxy?url="
 
     return f"""
     <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
     <link href="https://unpkg.com/@videojs/themes@1.0.1/dist/city/index.css" rel="stylesheet">
     <style>
-        .player-container {{
+        .player-wrap {{
             position: relative; width: 100%; height: {h}px; background: #000;
-            border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08);
         }}
         .video-js {{ width: 100%; height: 100%; }}
         .vjs-city .vjs-big-play-button {{
             left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important;
             margin: 0 !important; width: 2.5em !important; height: 2.5em !important; border-radius: 50% !important;
         }}
-        #player-status {{
-            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-            display: flex; align-items: center; justify-content: center;
+        #ps {{
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
             z-index: 20; pointer-events: none; text-align: center; color: #fff;
         }}
-        #player-status.active {{ background: rgba(0,0,0,0.6); pointer-events: auto; }}
-        #player-status .msg-box {{
-            background: rgba(15, 23, 42, 0.9); padding: 20px 30px; border-radius: 16px;
-            font-size: 0.95rem; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(8px);
+        #ps.active {{ background: rgba(0,0,0,0.65); pointer-events: auto; }}
+        #ps .box {{
+            background: rgba(15,23,42,0.92); padding: 22px 32px; border-radius: 16px;
+            font-size: 0.92rem; border: 1px solid rgba(255,255,255,0.15); backdrop-filter: blur(10px);
+            max-width: 420px;
         }}
-        .retry-btn {{
-            margin-top: 12px; padding: 10px 20px; background: #3b82f6; color: white;
-            border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600;
+        .abtn {{
+            display: inline-block; margin: 5px; padding: 10px 20px; border: none; border-radius: 8px;
+            cursor: pointer; font-size: 0.82rem; font-weight: 600; color: #fff; text-decoration: none;
         }}
-        .vlc-btn {{
-            margin-top: 8px; padding: 10px 20px; background: #ef4444; color: white;
-            border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem;
-            font-weight: 600; text-decoration: none; display: inline-block;
+        .abtn-blue {{ background: #3b82f6; }}
+        .abtn-green {{ background: #10b981; }}
+        .abtn-red {{ background: #ef4444; }}
+        .abtn-gray {{ background: #475569; }}
+        #dlog {{
+            position: absolute; bottom: 4px; left: 4px; right: 4px; font-size: 0.6rem;
+            color: #64748b; max-height: 55px; overflow-y: auto; font-family: monospace;
+            background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 6px;
+            display: none; z-index: 30;
         }}
-        #debug-log {{
-            position: absolute; bottom: 5px; left: 5px; right: 5px;
-            font-size: 0.65rem; color: #64748b; max-height: 60px; overflow-y: auto;
-            font-family: monospace; background: rgba(0,0,0,0.5); padding: 4px 8px;
-            border-radius: 6px; display: none; z-index: 30;
-        }}
-        .player-container:hover #debug-log {{ display: block; }}
+        .player-wrap:hover #dlog {{ display: block; }}
     </style>
 
-    <div class="player-container">
-        <video id="iptv-player" class="video-js vjs-theme-city vjs-big-play-centered"></video>
-        <div id="player-status">
-            <div class="msg-box" id="status-box">
-                <div id="status-text">⏳ Başlatılıyor...</div>
-            </div>
-        </div>
-        <div id="debug-log"></div>
+    <div class="player-wrap">
+        <video id="vp" class="video-js vjs-theme-city vjs-big-play-centered"></video>
+        <div id="ps"><div class="box" id="psb"><div id="pst">⏳ Başlatılıyor...</div></div></div>
+        <div id="dlog"></div>
     </div>
 
     <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7"></script>
     <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest/dist/mpegts.js"></script>
 
     <script>
     (function(){{
         var origUrl = '{url}';
-        if (!origUrl) {{ document.getElementById('status-text').innerHTML = '⚠️ URL yok'; return; }}
+        if (!origUrl) return;
 
-        var player = videojs('iptv-player', {{
-            autoplay: true, controls: true, responsive: true, fluid: false,
-            liveui: true, preload: 'auto', userActions: {{ hotkeys: true }}
+        var player = videojs('vp', {{
+            autoplay:true, controls:true, responsive:true, fluid:false,
+            liveui:true, preload:'auto', userActions:{{hotkeys:true}}
         }});
 
-        var statusEl  = document.getElementById('player-status');
-        var statusText = document.getElementById('status-text');
-        var debugLog   = document.getElementById('debug-log');
-        var hasSucceeded = false;
-        var currentHls = null;
-        var currentMpegts = null;
-        var attempt = 0;
+        var ps  = document.getElementById('ps');
+        var pst = document.getElementById('pst');
+        var dl  = document.getElementById('dlog');
+        var ok  = false;
+        var curHls = null;
+        var curTs  = null;
 
-        var PROXY_CHAINS = [
-            function(u) {{ return u; }},
-            function(u) {{ return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); }},
-            function(u) {{ return 'https://corsproxy.io/?' + encodeURIComponent(u); }}
+        /* ── Proxy zinciri ── */
+        var PROXIES = [
+            {{ name:'Doğrudan',    fn: null }},
+            {{ name:'Yerel Proxy', fn: function(u){{ return '{local_proxy_base}' + encodeURIComponent(u); }} }},
+            {{ name:'AllOrigins',  fn: function(u){{ return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); }} }},
+            {{ name:'CorsProxy',   fn: function(u){{ return 'https://corsproxy.io/?' + encodeURIComponent(u); }} }},
+            {{ name:'CodeTabs',    fn: function(u){{ return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u); }} }}
         ];
 
-        function log(msg) {{
-            console.log('[Player]', msg);
-            if (debugLog) {{
-                debugLog.innerHTML += msg + '<br>';
-                debugLog.scrollTop = debugLog.scrollHeight;
-            }}
+        function log(m) {{
+            console.log('[P]', m);
+            if(dl) {{ dl.innerHTML += m+'<br>'; dl.scrollTop = dl.scrollHeight; }}
         }}
-
-        function showStatus(msg, persistent) {{
-            statusText.innerHTML = msg;
-            statusEl.style.display = 'flex';
-            statusEl.classList.toggle('active', !!persistent);
+        function show(m, lock) {{
+            pst.innerHTML = m;
+            ps.style.display = 'flex';
+            ps.classList.toggle('active', !!lock);
         }}
-        function hideStatus() {{ statusEl.style.display = 'none'; }}
+        function hide() {{ ps.style.display = 'none'; }}
 
         function cleanup() {{
-            if (currentHls)    {{ try {{ currentHls.destroy(); }} catch(e){{}} currentHls = null; }}
-            if (currentMpegts) {{ try {{ currentMpegts.unload(); currentMpegts.detachMediaElement(); currentMpegts.destroy(); }} catch(e){{}} currentMpegts = null; }}
+            if(curHls) {{ try{{curHls.destroy();}}catch(e){{}} curHls=null; }}
+            if(curTs)  {{ try{{curTs.unload();curTs.detachMediaElement();curTs.destroy();}}catch(e){{}} curTs=null; }}
         }}
 
-        function tryPlay(proxyIndex) {{
-            if (hasSucceeded) return;
-            if (proxyIndex >= PROXY_CHAINS.length) {{
-                showFail();
+        var mediaEl = player.tech({{IWillNotUseThisInPlugins:true}}).el();
+
+        /* ══════════════════════════════════════
+           ANA DENEME FONKSİYONU
+           ══════════════════════════════════════ */
+        function tryAttempt(idx) {{
+            if (ok || idx >= PROXIES.length) {{
+                if (!ok) showFail();
                 return;
             }}
 
             cleanup();
-            attempt = proxyIndex;
-            var proxyFn = PROXY_CHAINS[proxyIndex];
-            var playUrl = proxyFn(origUrl);
-            var label = proxyIndex === 0 ? 'Doğrudan' : 'Proxy ' + proxyIndex;
+            var p = PROXIES[idx];
+            log('▶ Deneme ' + idx + ': ' + p.name);
+            show('🔄 ' + p.name + ' deneniyor...', false);
 
-            log('Deneme ' + proxyIndex + ': ' + label);
-            showStatus('🔄 ' + label + ' deneniyor...', false);
-
-            var mediaEl = player.tech({{ IWillNotUseThisInPlugins: true }}).el();
             var lower = origUrl.toLowerCase();
-            var isHLS = lower.includes('.m3u8') || lower.includes('m3u8') || lower.includes('/live/') || lower.includes('hls');
-            var isTS  = lower.endsWith('.ts');
+            var isHLS = lower.indexOf('.m3u8') !== -1 || lower.indexOf('m3u8') !== -1 
+                     || lower.indexOf('/live/') !== -1 || lower.indexOf('/hls') !== -1
+                     || lower.indexOf('playlist') !== -1;
+            var isTS  = lower.indexOf('.ts') !== -1 && !isHLS;
 
-            if (isHLS && Hls && Hls.isSupported()) {{
-                var hlsConfig = {{
+            /* ── HLS Oynatma ── */
+            if (typeof Hls !== 'undefined' && Hls.isSupported() && (isHLS || !isTS)) {{
+                var cfg = {{
                     enableWorker: true,
                     lowLatencyMode: true,
+                    manifestLoadingTimeOut: 8000,
                     fragLoadingTimeOut: 10000,
-                    manifestLoadingTimeOut: 10000,
+                    levelLoadingTimeOut: 8000,
                 }};
 
-                if (proxyIndex > 0) {{
-                    hlsConfig.xhrSetup = function(xhr, url) {{
-                        xhr.open('GET', proxyFn(url), true);
+                /*
+                 * ✅ KRİTİK FİX: xhrSetup ile proxy
+                 * loadSource() HER ZAMAN orijinal URL ile çağrılır.
+                 * HLS.js relative URL'leri orijinal base'e göre çözümler.
+                 * xhrSetup sadece gerçek HTTP isteğini proxy'den geçirir.
+                 */
+                if (p.fn) {{
+                    cfg.xhrSetup = function(xhr, url) {{
+                        var proxied = p.fn(url);
+                        log('  → ' + url.substring(0,50) + '...');
+                        xhr.open('GET', proxied, true);
                     }};
                 }}
 
-                var hls = new Hls(hlsConfig);
-                currentHls = hls;
-                hls.loadSource(playUrl);
+                var hls = new Hls(cfg);
+                curHls = hls;
+
+                /* ✅ HER ZAMAN orijinal URL! Proxy değil! */
+                hls.loadSource(origUrl);
                 hls.attachMedia(mediaEl);
 
-                var hlsTimeout = setTimeout(function() {{
-                    if (!hasSucceeded) tryPlay(proxyIndex + 1);
-                }}, 15000);
+                var tout = setTimeout(function() {{
+                    if (!ok) {{
+                        log('⏱ Timeout (' + p.name + ')');
+                        tryAttempt(idx + 1);
+                    }}
+                }}, 12000);
 
-                hls.on(Hls.Events.MANIFEST_PARSED, function() {{
-                    clearTimeout(hlsTimeout);
-                    hasSucceeded = true;
-                    hideStatus();
-                    mediaEl.play().catch(function(e) {{
-                        log('Autoplay engellendi');
-                        showStatus('▶️ Oynatmak için tıklayın', false);
+                hls.on(Hls.Events.MANIFEST_PARSED, function(e, d) {{
+                    clearTimeout(tout);
+                    log('✅ Manifest OK! (' + d.levels.length + ' level)');
+                    ok = true;
+                    hide();
+                    mediaEl.play().catch(function(err) {{
+                        show('▶️ Oynatmak için tıklayın', false);
                         mediaEl.addEventListener('click', function() {{
-                            mediaEl.play(); hideStatus();
-                        }}, {{ once: true }});
+                            mediaEl.play(); hide();
+                        }}, {{once:true}});
                     }});
                 }});
 
-                hls.on(Hls.Events.ERROR, function(e, data) {{
-                    if (data.fatal) {{
-                        clearTimeout(hlsTimeout);
-                        tryPlay(proxyIndex + 1);
+                hls.on(Hls.Events.FRAG_LOADED, function() {{
+                    if (!ok) {{ clearTimeout(tout); ok = true; hide(); }}
+                }});
+
+                hls.on(Hls.Events.ERROR, function(e, d) {{
+                    log('⚠ HLS: ' + d.details + ' fatal=' + d.fatal);
+                    if (d.fatal) {{
+                        clearTimeout(tout);
+                        tryAttempt(idx + 1);
                     }}
                 }});
 
-            }} else if (isHLS && mediaEl.canPlayType('application/vnd.apple.mpegURL')) {{
-                mediaEl.src = playUrl;
-                mediaEl.addEventListener('loadedmetadata', function() {{
-                    hasSucceeded = true; hideStatus();
-                    mediaEl.play().catch(function(){{}});
-                }}, {{ once: true }});
-                mediaEl.addEventListener('error', function() {{ tryPlay(proxyIndex + 1); }}, {{ once: true }});
-            }} else if (isTS && typeof mpegts !== 'undefined' && mpegts.isSupported()) {{
-                var m = mpegts.createPlayer({{ type: 'mpegts', url: playUrl, isLive: true }});
-                currentMpegts = m;
+                return;
+            }}
+
+            /* ── MPEG-TS ── */
+            if (isTS && typeof mpegts !== 'undefined' && mpegts.isSupported()) {{
+                var tsUrl = p.fn ? p.fn(origUrl) : origUrl;
+                log('TS: ' + tsUrl.substring(0,60));
+                var m = mpegts.createPlayer({{type:'mpegts', url:tsUrl, isLive:true}});
+                curTs = m;
                 m.attachMediaElement(mediaEl);
                 m.load(); m.play();
-                m.on(mpegts.Events.ERROR, function() {{ tryPlay(proxyIndex + 1); }});
-                mediaEl.addEventListener('playing', function() {{
-                    hasSucceeded = true; hideStatus();
-                }}, {{ once: true }});
-            }} else {{
-                player.src({{ src: playUrl, type: 'video/mp4' }});
-                player.one('playing', function() {{ hasSucceeded = true; hideStatus(); }});
-                player.one('error', function() {{ tryPlay(proxyIndex + 1); }});
+                var ttout = setTimeout(function(){{ if(!ok) tryAttempt(idx+1); }}, 10000);
+                m.on(mpegts.Events.ERROR, function(){{ clearTimeout(ttout); tryAttempt(idx+1); }});
+                mediaEl.addEventListener('playing', function(){{
+                    clearTimeout(ttout); ok=true; hide();
+                }}, {{once:true}});
+                return;
             }}
+
+            /* ── Genel Video ── */
+            var vUrl = p.fn ? p.fn(origUrl) : origUrl;
+            player.src({{src:vUrl, type:'video/mp4'}});
+            var dtout = setTimeout(function(){{ if(!ok) tryAttempt(idx+1); }}, 8000);
+            player.one('playing', function(){{ clearTimeout(dtout); ok=true; hide(); }});
+            player.one('error', function(){{ clearTimeout(dtout); tryAttempt(idx+1); }});
+            player.play().catch(function(){{}});
         }}
 
+        /* ── Başarısız UI ── */
         function showFail() {{
-            var html = '🚫 Oynatılamadı<br>' +
-                '<p style="font-size:0.75rem;color:#94a3b8;margin:5px 0;">Bu kanal tarayıcıda açılamıyor.</p>' +
-                '<button class="retry-btn" onclick="location.reload()" style="margin:4px;">🔄 Tekrar</button>' +
-                '<button class="retry-btn" style="background:#10b981;margin:4px;" ' +
-                    'onclick="navigator.clipboard.writeText(\\'' + origUrl + '\\');this.textContent=\\'✅ Kopyalandı!\\'">📋 URL Kopyala</button><br>' +
-                '<div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px;">' +
-                    '<a href="vlc://' + origUrl + '" class="vlc-btn" style="margin:3px;">▶ VLC</a>' +
-                    '<a href="potplayer://' + origUrl + '" class="vlc-btn" style="background:#334155;margin:3px;">▶ PotPlayer</a>' +
-                '</div>';
-            showStatus(html, true);
+            log('❌ Tüm yöntemler başarısız');
+            show(
+                '🚫 Oynatılamadı<br>' +
+                '<p style="font-size:0.75rem;color:#94a3b8;margin:5px 0 12px 0;">' +
+                'Bu kanal tarayıcıda CORS/DRM nedeniyle açılamıyor.<br>' +
+                'Harici oynatıcı kullanın.</p>' +
+                '<button class="abtn abtn-blue" onclick="location.reload()">🔄 Tekrar</button>' +
+                '<button class="abtn abtn-green" onclick="navigator.clipboard.writeText(\\'' + origUrl + '\\');this.textContent=\\'✅ Kopyalandı!\\'">📋 URL Kopyala</button><br>' +
+                '<div style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;">' +
+                '<a href="vlc://' + origUrl + '" class="abtn abtn-red">▶ VLC</a>' +
+                '<a href="potplayer://' + origUrl + '" class="abtn abtn-gray">▶ PotPlayer</a></div>',
+                true
+            );
         }}
 
-        tryPlay(0);
+        /* ── Global hata yakalama ── */
+        player.on('playing', function(){{ ok=true; hide(); }});
+        player.on('error', function(){{ if(!ok) log('VideoJS error: ' + JSON.stringify(player.error())); }});
+
+        /* ══ BAŞLAT ══ */
+        log('URL: ' + origUrl);
+        tryAttempt(0);
     }})();
     </script>
     """
