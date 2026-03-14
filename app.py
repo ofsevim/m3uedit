@@ -360,15 +360,6 @@ with st.sidebar:
         if group_options:
             selected_groups = st.multiselect("Grupları filtrele", group_options, default=None, key="group_filter")
 
-        if st.button("🔍 Sağlık Kontrolü", use_container_width=True):
-            from utils.parser import batch_check_health
-            from utils.config import HEALTH_CHECK_MAX_WORKERS, HEALTH_CHECK_TIMEOUT
-            
-            with st.spinner("Kanallar taranıyor..."):
-                urls = st.session_state.data["URL"].tolist()
-                results = batch_check_health(urls, max_workers=HEALTH_CHECK_MAX_WORKERS, timeout=HEALTH_CHECK_TIMEOUT)
-                st.session_state.data["Durum"] = results
-            st.success("Tarama tamamlandı!")
 
     # İstatistikler
     st.markdown("---")
@@ -406,19 +397,19 @@ if not st.session_state.data.empty:
 
     st.caption(f"Gösterilen: {len(df_display)} / {len(st.session_state.data)} kanal")
 
-    # --- Dışa Aktar & Link ---
+    # --- İşlemler Row ---
     m3u_out = convert_df_to_m3u(df_display)
-    exp1, exp2 = st.columns(2)
-    with exp1:
+    act1, act2, act3 = st.columns(3)
+    with act1:
         st.download_button(
-            label=f"📥 M3U İndir ({len(df_display)} kanal)",
+            label=f"📥 M3U İndir ({len(df_display)})",
             data=m3u_out,
             file_name="iptv_listesi.m3u",
             mime="text/plain",
             type="primary",
             use_container_width=True,
         )
-    with exp2:
+    with act2:
         if st.button("🔗 M3U Link Oluştur", use_container_width=True):
             with st.spinner("Link oluşturuluyor..."):
                 link = create_m3u_link(m3u_out)
@@ -427,6 +418,16 @@ if not st.session_state.data.empty:
                 st.success("Link hazır!")
             else:
                 st.error("Link oluşturulamadı.")
+    with act3:
+        if st.button("🔍 Sağlık Kontrolü", use_container_width=True):
+            with st.spinner("Kanallar taranıyor..."):
+                urls = df_display["URL"].tolist()
+                results = batch_check_health(urls, max_workers=HEALTH_CHECK_MAX_WORKERS, timeout=HEALTH_CHECK_TIMEOUT)
+                
+                # Sadece filtrelenmiş veriyi değil, ana verideki ilgili URL'leri güncelle
+                for i, url in enumerate(urls):
+                    st.session_state.data.loc[st.session_state.data["URL"] == url, "Durum"] = results[i]
+                st.rerun()
 
     if st.session_state.get("m3u_link"):
         st.code(st.session_state.m3u_link, language=None)
@@ -502,11 +503,12 @@ if not st.session_state.data.empty:
 
 else:
     st.markdown(
+        "<div style='text-align:center;padding:80px 20px;'>"
         f"<div style='font-size:4rem;margin-bottom:1rem;'>{PAGE_ICON}</div>"
         f"<h2 style='color:#f1f5f9;'>{PAGE_TITLE}</h2>"
         f"<p style='color:#94a3b8;font-size:1.1rem;max-width:500px;margin:1rem auto;'>"
         f"Sol menüden bir M3U linki yapıştırın ve TR kanallarını kolayca filtreleyin.</p>"
-        f"</div>",
+        "</div>",
         unsafe_allow_html=True,
     )
 
