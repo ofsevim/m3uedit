@@ -385,17 +385,24 @@ if not st.session_state.data.empty:
     st.markdown("### 🎬 Canlı Oynatıcı")
     col1, col2 = st.columns([4, 1])
     with col1:
-        play_options = df_display["Kanal Adı"].tolist() if not df_display.empty else []
-        play_name = st.selectbox("Oynatılacak Kanal", options=play_options,
-                                 index=None, placeholder="Kanal seçin...", key="play_select")
+        # Seçenekleri "Durum - Kanal Adı" formatında hazırla
+        play_options_map = {}
+        for _, row in df_display.iterrows():
+            durum = row.get("Durum", "").split(" ")[0] if "Durum" in row else "❔"
+            display_name = f"{durum} {row['Kanal Adı']}"
+            play_options_map[display_name] = row['Kanal Adı']
+            
+        play_name_display = st.selectbox("Oynatılacak Kanal", options=list(play_options_map.keys()),
+                                         index=None, placeholder="Kanal seçin...", key="play_select")
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("▶ OYNAT", use_container_width=True, type="primary"):
-            if play_name:
-                row = df_display[df_display["Kanal Adı"] == play_name]
+            if play_name_display:
+                real_name = play_options_map[play_name_display]
+                row = df_display[df_display["Kanal Adı"] == real_name]
                 if not row.empty:
                     st.session_state.play_channel = {
-                        "name": play_name,
+                        "name": real_name,
                         "url": row.iloc[0]["URL"],
                         "logo": row.iloc[0].get("LogoURL", ""),
                         "group": row.iloc[0].get("Grup", ""),
