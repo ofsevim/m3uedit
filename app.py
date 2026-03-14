@@ -120,9 +120,10 @@ def create_m3u_link(m3u_content: str) -> str:
         logger.error(f"M3U link oluşturma hatası: {e}", exc_info=True)
         return ""
 
-def render_live_player(stream_url: str, height: int = 420) -> str:
+def render_live_player(stream_url: str, height: int = 420, cors_restricted: bool = False) -> str:
     url = (stream_url or "").replace("'", "\\'").replace('"', '\\"')
     h = str(height)
+    start_proxy_idx = 1 if cors_restricted else 0
     return f"""
     <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
     <link href="https://unpkg.com/@videojs/themes@1.0.1/dist/city/index.css" rel="stylesheet">
@@ -190,7 +191,7 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
             'https://api.allorigins.win/raw?url=',
             'https://corsproxy.io/?'
         ];
-        var currentIdx = 0;
+        var currentIdx = {start_proxy_idx};
         var hasSucceeded = false;
 
         function showStatus(msg, isPersistent) {{
@@ -211,7 +212,7 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
             if (hasSucceeded) return;
             
             var lower = url.toLowerCase();
-            var ctx = proxies[currentIdx] ? ' (Proxy ' + currentIdx + ')' : '';
+            var ctx = proxies[currentIdx] ? ' (CORS Proxy ' + currentIdx + ' aktif)' : '';
             showStatus('🔄 Kanal yükleniyor' + ctx + '...', false);
 
             if (lower.includes('.m3u8') || lower.includes('/live/')) {{
@@ -257,9 +258,12 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
         player.on('error', function() {{ tryNext(); }});
 
         if (!origUrl) {{ showStatus('⚠️ Geçersiz URL', true); }}
-        else {{ startPlay(origUrl); }}
+        else {{ 
+            var initialUrl = proxies[currentIdx] + (proxies[currentIdx] ? encodeURIComponent(origUrl) : origUrl);
+            startPlay(initialUrl); 
+        }}
 
-        setTimeout(function() {{ if (!hasSucceeded && currentIdx === 0) tryNext(); }}, 6000);
+        setTimeout(function() {{ if (!hasSucceeded && currentIdx === {start_proxy_idx}) tryNext(); }}, 6000);
     }})();
     </script>
     """
@@ -293,10 +297,10 @@ if "visited" not in st.session_state:
 
 with st.sidebar:
     st.markdown(
-        f"<div style='text-align:center;padding:0.3rem 0;'>"
-        f"<span style='font-size:1.2rem;'>{PAGE_ICON}</span> "
-        f"<span style='font-size:0.95rem;font-weight:600;color:#f1f5f9;'>{PAGE_TITLE}</span>"
-        f"</div>",
+        "<div style='text-align:center;padding:0.3rem 0;'>"
+        "<span style='font-size:1.2rem;'>📺</span> "
+        "<span style='font-size:0.95rem;font-weight:600;color:#f1f5f9;'>M3U Editör Pro</span>"
+        "</div>",
         unsafe_allow_html=True,
     )
     st.markdown("---")
@@ -319,6 +323,8 @@ with st.sidebar:
                 st.error(f"🚫 HTTP Hatası: {e.code}")
             except urllib.error.URLError as e:
                 st.error(f"🔌 Bağlantı Hatası: {e.reason}")
+            except TimeoutError:
+                st.error(f"⏱️ Zaman Aşımı ({REQUEST_TIMEOUT}s)")
             except Exception as e:
                 logger.error("Yükleme hatası", exc_info=True)
                 st.error(f"❌ Hata: {e}")
@@ -354,6 +360,16 @@ with st.sidebar:
         if group_options:
             selected_groups = st.multiselect("Grupları filtrele", group_options, default=None, key="group_filter")
 
+        if st.button("🔍 Sağlık Kontrolü", use_container_width=True):
+            from utils.parser import batch_check_health
+            from utils.config import HEALTH_CHECK_MAX_WORKERS, HEALTH_CHECK_TIMEOUT
+            
+            with st.spinner("Kanallar taranıyor..."):
+                urls = st.session_state.data["URL"].tolist()
+                results = batch_check_health(urls, max_workers=HEALTH_CHECK_MAX_WORKERS, timeout=HEALTH_CHECK_TIMEOUT)
+                st.session_state.data["Durum"] = results
+            st.success("Tarama tamamlandı!")
+
     # İstatistikler
     st.markdown("---")
     stats = vc.get_stats()
@@ -381,7 +397,7 @@ if not st.session_state.data.empty:
             | _safe_contains(df_display["Grup"], search_term)
         ]
 
-    # Metrikler
+    # Metrikler (filtrelenmiş veriye göre)
     mc1, mc2, mc3 = st.columns(3)
     mc1.metric("📺 Kanal", len(df_display))
     mc2.metric("📁 Grup", df_display["Grup"].nunique())
@@ -392,10 +408,10 @@ if not st.session_state.data.empty:
 
     # --- Dışa Aktar & Link ---
     m3u_out = convert_df_to_m3u(df_display)
-    exp1, exp2, exp3 = st.columns(3)
+    exp1, exp2 = st.columns(2)
     with exp1:
         st.download_button(
-            label=f"📥 İndir ({len(df_display)})",
+            label=f"📥 M3U İndir ({len(df_display)} kanal)",
             data=m3u_out,
             file_name="iptv_listesi.m3u",
             mime="text/plain",
@@ -403,7 +419,7 @@ if not st.session_state.data.empty:
             use_container_width=True,
         )
     with exp2:
-        if st.button("🔗 Link Oluştur", use_container_width=True):
+        if st.button("🔗 M3U Link Oluştur", use_container_width=True):
             with st.spinner("Link oluşturuluyor..."):
                 link = create_m3u_link(m3u_out)
             if link:
@@ -411,17 +427,6 @@ if not st.session_state.data.empty:
                 st.success("Link hazır!")
             else:
                 st.error("Link oluşturulamadı.")
-    with exp3:
-        if st.button("🔍 Sağlık Kontrolü", use_container_width=True):
-            with st.spinner(f"Kanallar kontrol ediliyor ({len(df_display)})..."):
-                urls = df_display["URL"].tolist()
-                health_results = batch_check_health(urls, HEALTH_CHECK_MAX_WORKERS, HEALTH_CHECK_TIMEOUT)
-                
-                # Orijinal veriyi güncelle (URL eşleşmesine göre)
-                # Not: Liste çok büyükse optimize edilmeli, şimdilik basit tutuyoruz
-                for i, url in enumerate(urls):
-                    st.session_state.data.loc[st.session_state.data["URL"] == url, "Durum"] = "✅ Aktif" if health_results[i] else "❌ Pasif"
-                st.rerun()
 
     if st.session_state.get("m3u_link"):
         st.code(st.session_state.m3u_link, language=None)
@@ -457,6 +462,7 @@ if not st.session_state.data.empty:
                     "url": row.iloc[0]["URL"],
                     "logo": row.iloc[0].get("LogoURL", ""),
                     "group": row.iloc[0].get("Grup", ""),
+                    "durum": row.iloc[0].get("Durum", ""),
                 }
                 st.rerun()
 
@@ -470,9 +476,12 @@ if not st.session_state.data.empty:
                 except Exception:
                     pass
             st.markdown(f"<span style='color:#94a3b8;'>Grup:</span> <span style='color:#f1f5f9;font-weight:600;'>{pc.get('group', '')}</span>", unsafe_allow_html=True)
+            if "CORS" in pc.get("durum", ""):
+                st.warning("⚠️ CORS Kısıtlı Kanal: Proxy kullanılıyor.")
         with pcol2:
             st.markdown(f"### ▶ {pc['name']}")
-            components.html(render_live_player(pc["url"], height=380), height=420)
+            cors_restricted = "CORS" in pc.get("durum", "")
+            components.html(render_live_player(pc["url"], height=380, cors_restricted=cors_restricted), height=420)
 
         if st.button("⏹ Durdur", use_container_width=True):
             st.session_state.play_channel = None
@@ -485,15 +494,14 @@ if not st.session_state.data.empty:
         df_display[display_cols] if display_cols else df_display,
         use_container_width=True, hide_index=True, height=TABLE_HEIGHT,
         column_config={
-            "Durum": st.column_config.TextColumn("Durum", width="small"),
             "URL": st.column_config.TextColumn("URL", width="large"),
             "Tür": st.column_config.TextColumn("Tür", width="small"),
+            "Durum": st.column_config.TextColumn("Durum", width="small"),
         },
     )
 
 else:
     st.markdown(
-        f"<div style='text-align:center;padding:80px 20px;'>"
         f"<div style='font-size:4rem;margin-bottom:1rem;'>{PAGE_ICON}</div>"
         f"<h2 style='color:#f1f5f9;'>{PAGE_TITLE}</h2>"
         f"<p style='color:#94a3b8;font-size:1.1rem;max-width:500px;margin:1rem auto;'>"
