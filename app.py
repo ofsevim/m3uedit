@@ -173,20 +173,11 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
         .abtn-green {{ background: #10b981; }}
         .abtn-red {{ background: #ef4444; }}
         .abtn-gray {{ background: #475569; }}
-        #dlog {{
-            position: absolute; bottom: 45px; right: 8px; font-size: 0.6rem;
-            color: #64748b; max-height: 50px; width: 220px; overflow-y: auto; 
-            font-family: monospace; background: rgba(0,0,0,0.65); padding: 5px 10px; 
-            border-radius: 6px; display: none; z-index: 30; pointer-events: none;
-            text-align: right;
-        }}
-        .player-wrap:hover #dlog {{ display: block; }}
     </style>
 
     <div class="player-wrap">
         <video id="vp" class="video-js vjs-theme-city vjs-big-play-centered"></video>
         <div id="ps"><div class="box" id="psb"><div id="pst">⏳ Başlatılıyor...</div></div></div>
-        <div id="dlog"></div>
     </div>
 
     <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
@@ -205,7 +196,6 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
 
         var ps  = document.getElementById('ps');
         var pst = document.getElementById('pst');
-        var dl  = document.getElementById('dlog');
         var ok  = false;
         var curHls = null;
         var curTs  = null;
@@ -220,8 +210,7 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
         ];
 
         function log(m) {{
-            console.log('[P]', m);
-            if(dl) {{ dl.innerHTML += m+'<br>'; dl.scrollTop = dl.scrollHeight; }}
+            console.log('[IPTV]', m);
         }}
         function show(m, lock) {{
             pst.innerHTML = m;
