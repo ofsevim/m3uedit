@@ -11,7 +11,6 @@ import sys
 import time
 import logging
 import urllib.parse
-import base64
 from datetime import datetime
 
 # --- MODÜL YOLLARI ---
@@ -175,10 +174,11 @@ def render_live_player(stream_url: str, height: int = 420) -> str:
         .abtn-red {{ background: #ef4444; }}
         .abtn-gray {{ background: #475569; }}
         #dlog {{
-            position: absolute; bottom: 4px; left: 4px; right: 4px; font-size: 0.6rem;
-            color: #64748b; max-height: 55px; overflow-y: auto; font-family: monospace;
-            background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 6px;
-            display: none; z-index: 30;
+            position: absolute; bottom: 45px; right: 8px; font-size: 0.6rem;
+            color: #64748b; max-height: 50px; width: 220px; overflow-y: auto; 
+            font-family: monospace; background: rgba(0,0,0,0.65); padding: 5px 10px; 
+            border-radius: 6px; display: none; z-index: 30; pointer-events: none;
+            text-align: right;
         }}
         .player-wrap:hover #dlog {{ display: block; }}
     </style>
@@ -656,24 +656,10 @@ if not st.session_state.data.empty:
                 st.warning("⚠️ CORS Kısıtlı — Proxy aktif.")
         with pcol2:
             st.markdown(f"### ▶ {pc['name']}")
-            
-            # ✅ Fullscreen Fix: st.components.v1.html bazen allowfullscreen izni vermiyor.
-            # Markdown + iframe ile manuel yetkilendirme yapıyoruz.
-            player_html = render_live_player(pc["url"], height=380)
-            b64_player = base64.b64encode(player_html.encode("utf-8")).decode("utf-8")
-            
-            iframe_html = f"""
-                <iframe 
-                    src="data:text/html;base64,{b64_player}" 
-                    width="100%" 
-                    height="420" 
-                    frameborder="0" 
-                    allowfullscreen 
-                    allow="fullscreen; picture-in-picture"
-                    style="border:none; border-radius:12px;"
-                ></iframe>
-            """
-            st.markdown(iframe_html, unsafe_allow_html=True)
+            components.html(
+                render_live_player(pc["url"], height=380),
+                height=420,
+            )
 
         col1, col2 = st.columns(2)
         with col1:
