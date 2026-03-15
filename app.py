@@ -11,6 +11,7 @@ import sys
 import time
 import logging
 import urllib.parse
+import base64
 from datetime import datetime
 
 # --- MODÜL YOLLARI ---
@@ -655,10 +656,24 @@ if not st.session_state.data.empty:
                 st.warning("⚠️ CORS Kısıtlı — Proxy aktif.")
         with pcol2:
             st.markdown(f"### ▶ {pc['name']}")
-            components.html(
-                render_live_player(pc["url"], height=380),
-                height=420,
-            )
+            
+            # ✅ Fullscreen Fix: st.components.v1.html bazen allowfullscreen izni vermiyor.
+            # Markdown + iframe ile manuel yetkilendirme yapıyoruz.
+            player_html = render_live_player(pc["url"], height=380)
+            b64_player = base64.b64encode(player_html.encode("utf-8")).decode("utf-8")
+            
+            iframe_html = f"""
+                <iframe 
+                    src="data:text/html;base64,{b64_player}" 
+                    width="100%" 
+                    height="420" 
+                    frameborder="0" 
+                    allowfullscreen 
+                    allow="fullscreen; picture-in-picture"
+                    style="border:none; border-radius:12px;"
+                ></iframe>
+            """
+            st.markdown(iframe_html, unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
         with col1:
