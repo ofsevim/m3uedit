@@ -22,10 +22,17 @@ _ssl_ctx = ssl.create_default_context()
 _ssl_ctx.check_hostname = False
 _ssl_ctx.verify_mode = ssl.CERT_NONE
 
-def parse_m3u_lines(iterator: Iterable) -> List[Dict]:
-    """M3U satırlarını parse eder ve kanal listesi döndürür."""
-    channels = []
-    current_info = None
+def parse_m3u_lines(iterator: Iterable) -> List[Dict[str, str]]:
+    """M3U satırlarını parse eder ve kanal listesi döndürür.
+    
+    Args:
+        iterator: M3U dosyasının satırları (str veya bytes)
+        
+    Returns:
+        Kanal bilgilerini içeren dict listesi
+    """
+    channels: List[Dict[str, str]] = []
+    current_info: Optional[Dict[str, str]] = None
     for line in iterator:
         if isinstance(line, bytes):
             try:
@@ -74,9 +81,24 @@ def parse_m3u_lines(iterator: Iterable) -> List[Dict]:
                 current_info = None
     return channels
 
-def filter_channels(channels: List[Dict], only_tr: bool = False, keyword: str = "", group_filter: str = "") -> List[Dict]:
-    """Kanal listesini filtreler."""
-    result = channels
+def filter_channels(
+    channels: List[Dict[str, str]],
+    only_tr: bool = False,
+    keyword: str = "",
+    group_filter: str = ""
+) -> List[Dict[str, str]]:
+    """Kanal listesini verilen kriterlere göre filtreler.
+    
+    Args:
+        channels: Filtrelenecek kanal listesi
+        only_tr: Sadece Türk kanallarını filtrele
+        keyword: Kanal adı veya grup adında aranacak kelime
+        group_filter: Sadece belirtilen gruptaki kanalları göster
+        
+    Returns:
+        Filtrelenmiş kanal listesi
+    """
+    result: List[Dict[str, str]] = channels
     if only_tr:
         result = [ch for ch in result if TR_PATTERN.search(ch.get("Grup", "") + " " + ch.get("Kanal Adı", ""))]
     if keyword:
@@ -221,8 +243,15 @@ def batch_check_health(
     return results
 
 def convert_df_to_m3u(df: pd.DataFrame) -> str:
-    """Pandas DataFrame'i M3U formatına dönüştürür."""
-    lines = ["#EXTM3U"]
+    """Pandas DataFrame'i M3U formatına dönüştürür.
+    
+    Args:
+        df: Kanal bilgilerini içeren DataFrame
+        
+    Returns:
+        M3U formatında string
+    """
+    lines: List[str] = ["#EXTM3U"]
     for _, row in df.iterrows():
         logo = row.get("LogoURL", "")
         logo_attr = f' tvg-logo="{logo}"' if logo else ""

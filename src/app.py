@@ -55,86 +55,40 @@ _load_css()
 
 
 # =====================================================================
-# YARDIMCI FONKSİYONLAR
+# YARDIMCI FONKSİYONLAR (utils/parser.py'den import)
 # =====================================================================
 
-TR_PATTERN = re.compile(
-    r"(\b|_|\[|\(|\|)(TR|TURK|TÜRK|TURKIYE|TÜRKİYE|YERLI|ULUSAL|ISTANBUL)(\b|_|\]|\)|\||:)",
-    re.IGNORECASE,
-)
+try:
+    from utils.parser import (
+        parse_m3u_lines,
+        filter_channels,
+        convert_df_to_m3u,
+        TR_PATTERN,
+        _ssl_ctx,
+    )
+except ImportError:
+    # Fallback: Embedded imports if utils not available
+    from utils.config import REQUEST_TIMEOUT, USER_AGENT, DEFAULT_TR_FILTER, TABLE_HEIGHT
+    import re as re_module
+    
+    # Inline fallback for TR_PATTERN if import fails
+    TR_PATTERN = re_module.compile(
+        r"(\b|_|\[|\(|\|)(TR|TURK|TÜRK|TURKIYE|TÜRKİYE|YERLI|ULUSAL|ISTANBUL)(\b|_|\]|\)|\||:)",
+        re_module.IGNORECASE,
+    )
+
+
+def _safe_contains(series: pd.Series, term: str) -> pd.Series:
+    """Pandas serisinde güvenli arama yapar."""
+    return series.astype(str).str.contains(term, case=False, na=False)
 
 
 def _create_ssl_context():
+    """SSL sertifika doğrulamasını devre dışı bırakan context oluşturur."""
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
-
-
-def _safe_contains(series: pd.Series, term: str) -> pd.Series:
-    return series.astype(str).str.contains(term, case=False, na=False)
-
-
-def parse_m3u_lines(iterator: Iterable) -> List[Dict]:
-    channels = []
-    current_info = None
-    for line in iterator:
-        if isinstance(line, bytes):
-            try:
-                line = line.decode("utf-8", errors="ignore").strip()
-            except Exception:
-                continue
-        else:
-            line = line.strip()
-        if not line:
-            continue
-        if line.startswith("#EXTINF"):
-            info = {"Grup": "Genel", "Kanal Adı": "Bilinmeyen", "URL": "", "LogoURL": ""}
-            logo = re.search(r'tvg-logo="([^"]*)"', line)
-            if logo:
-                info["LogoURL"] = logo.group(1)
-            grp = re.search(r'group-title="([^"]*)"', line)
-            if grp:
-                info["Grup"] = grp.group(1)
-            parts = line.split(",")
-            if len(parts) > 1:
-                info["Kanal Adı"] = parts[-1].strip()
-            current_info = info
-        elif not line.startswith("#"):
-            if current_info:
-                current_info["URL"] = line
-                lower = line.lower()
-                if ".m3u8" in lower or "/live/" in lower:
-                    current_info["Tür"] = "HLS"
-                elif ".mpd" in lower:
-                    current_info["Tür"] = "DASH"
-                else:
-                    current_info["Tür"] = "Diğer"
-                channels.append(current_info)
-                current_info = None
-    return channels
-
-
-def filter_channels(channels: List[Dict], only_tr: bool = False, keyword: str = "", group_filter: str = "") -> List[Dict]:
-    result = channels
-    if only_tr:
-        result = [ch for ch in result if TR_PATTERN.search(ch.get("Grup", "") + " " + ch.get("Kanal Adı", ""))]
-    if keyword:
-        kw = keyword.lower()
-        result = [ch for ch in result if kw in ch.get("Kanal Adı", "").lower() or kw in ch.get("Grup", "").lower()]
-    if group_filter:
-        result = [ch for ch in result if ch.get("Grup", "") == group_filter]
-    return result
-
-
-def convert_df_to_m3u(df: pd.DataFrame) -> str:
-    lines = ["#EXTM3U"]
-    for _, row in df.iterrows():
-        logo = row.get("LogoURL", "")
-        logo_attr = f' tvg-logo="{logo}"' if logo else ""
-        lines.append(f'#EXTINF:-1{logo_attr} group-title="{row["Grup"]}",{row["Kanal Adı"]}')
-        lines.append(str(row["URL"]))
-    return "\n".join(lines) + "\n"
 
 
 def create_m3u_link(m3u_content: str) -> str:
