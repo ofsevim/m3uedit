@@ -7,6 +7,7 @@ import socket
 import ssl
 import time
 import logging
+import threading
 from typing import Iterable, List, Dict, Callable, Optional
 
 logger = logging.getLogger(__name__)
@@ -188,17 +189,23 @@ def batch_check_health(
     workers = min(max_workers, total)
     results = ["❔ Bekliyor"] * total
     completed = 0
+    progress_lock = threading.Lock()
 
     def check_with_index(args):
         nonlocal completed
         idx, url = args
         result = _check_single_url(url, timeout=timeout)
-        completed += 1
         if progress_callback:
             try:
-                progress_callback(completed, total)
+                with progress_lock:
+                    completed += 1
+                    current_completed = completed
+                progress_callback(current_completed, total)
             except Exception:
                 pass
+        else:
+            with progress_lock:
+                completed += 1
         return idx, result
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:

@@ -91,7 +91,7 @@ vc = VisitorCounter()
 # =====================================================================
 
 def _safe_contains(series: pd.Series, term: str) -> pd.Series:
-    return series.astype(str).str.contains(term, case=False, na=False)
+    return series.astype(str).str.contains(term, case=False, na=False, regex=False)
 
 
 def create_m3u_link(m3u_content: str) -> str:
@@ -538,8 +538,8 @@ if not st.session_state.data.empty:
 
             results = batch_check_health(
                 urls, 
-                max_workers=50, 
-                timeout=3.0, 
+                max_workers=HEALTH_CHECK_MAX_WORKERS,
+                timeout=HEALTH_CHECK_TIMEOUT,
                 progress_callback=update_progress
             )
 

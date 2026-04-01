@@ -3,11 +3,13 @@
 
 import sys
 import os
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from app import parse_m3u_lines, filter_channels, convert_df_to_m3u
 import pandas as pd
+from utils import parser as parser_utils
 
 
 # =====================================================================
@@ -135,3 +137,20 @@ def test_convert_df_to_m3u():
     assert m3u.startswith("#EXTM3U")
     assert "Kanal 1" in m3u
     assert 'tvg-logo="http://logo.com/img.png"' in m3u
+
+
+def test_batch_check_health_progress_is_consistent():
+    urls = ["http://a.com", "http://b.com", "http://c.com"]
+    progress_calls = []
+
+    with patch.object(parser_utils, "_check_single_url", return_value="âœ… Aktif"):
+        results = parser_utils.batch_check_health(
+            urls,
+            max_workers=3,
+            timeout=0.1,
+            progress_callback=lambda completed, total: progress_calls.append((completed, total)),
+        )
+
+    assert results == ["âœ… Aktif", "âœ… Aktif", "âœ… Aktif"]
+    assert sorted(call[0] for call in progress_calls) == [1, 2, 3]
+    assert all(call[1] == 3 for call in progress_calls)

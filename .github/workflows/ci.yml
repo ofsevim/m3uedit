@@ -40,7 +40,7 @@ jobs:
     
     - name: Syntax check
       run: |
+        python -m py_compile app.py
         python -m py_compile src/app.py
         python -m py_compile utils/config.py
         python -m py_compile utils/visitor_counter.py
-
