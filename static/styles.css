@@ -1,494 +1,623 @@
-/* M3U Editör Pro v2.0 — Premium Dark Theme */
+/* M3U Editor Pro UI Refresh */
 
-/* Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap');
 
-/* ===== GLOBAL ===== */
-html, body, [data-testid="stAppViewContainer"] {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
-    color: #e2e8f0 !important;
+:root {
+    --bg-0: #08111f;
+    --bg-1: #0d1728;
+    --bg-2: rgba(15, 23, 42, 0.72);
+    --surface-1: rgba(255, 255, 255, 0.045);
+    --surface-2: rgba(255, 255, 255, 0.08);
+    --line-soft: rgba(255, 255, 255, 0.08);
+    --line-strong: rgba(148, 163, 184, 0.24);
+    --text-strong: #f8fafc;
+    --text-base: #dbe7f5;
+    --text-soft: #94a3b8;
+    --accent: #ff7a59;
+    --accent-2: #f97316;
+    --accent-3: #22c55e;
+    --danger: #fb7185;
+    --warning: #fbbf24;
+    --shadow-lg: 0 20px 60px rgba(3, 7, 18, 0.42);
+    --shadow-md: 0 10px 30px rgba(8, 15, 30, 0.28);
+    --radius-xl: 24px;
+    --radius-lg: 18px;
+    --radius-md: 14px;
+}
+
+html,
+body,
+[data-testid="stAppViewContainer"] {
+    font-family: "Manrope", sans-serif !important;
+    color: var(--text-base) !important;
+    background:
+        radial-gradient(circle at top left, rgba(249, 115, 22, 0.16), transparent 28%),
+        radial-gradient(circle at top right, rgba(34, 197, 94, 0.08), transparent 24%),
+        linear-gradient(160deg, #07101d 0%, #0d1728 46%, #0b1320 100%);
 }
 
 .stApp {
-    background: linear-gradient(160deg, #0a0e17 0%, #111827 50%, #0f172a 100%);
+    background: transparent;
 }
 
-/* Tüm metin elemanları dark mode uyumlu */
-p, span, label, div, li, td, th, caption {
-    color: #e2e8f0;
+p,
+span,
+label,
+div,
+li,
+td,
+th,
+caption {
+    color: var(--text-base);
 }
 
-/* ===== SIDEBAR ===== */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: "Space Grotesk", "Manrope", sans-serif;
+    letter-spacing: -0.04em;
+    color: var(--text-strong) !important;
+    margin-bottom: 0.2rem;
+}
+
+h1 {
+    font-size: 2.5rem;
+}
+
+h2 {
+    font-size: 1.55rem;
+}
+
+h3 {
+    font-size: 1.15rem;
+}
+
+[data-testid="stHeader"] {
+    background: transparent;
+}
+
+[data-testid="stAppViewContainer"] > .main {
+    padding-top: 1.1rem;
+}
+
 [data-testid="stSidebar"] {
-    background: rgba(15, 23, 42, 0.95) !important;
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(8, 15, 30, 0.9) !important;
+    backdrop-filter: blur(18px);
+    border-right: 1px solid var(--line-soft);
 }
 
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h4,
-[data-testid="stSidebar"] label,
-[data-testid="stSidebar"] .stRadio label {
-    color: #cbd5e1 !important;
-    font-weight: 500 !important;
+.sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.95rem 1rem;
+    background: linear-gradient(145deg, rgba(255, 122, 89, 0.14), rgba(34, 197, 94, 0.08));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
+    box-shadow: var(--shadow-md);
 }
 
-/* ===== BAŞLIKLAR ===== */
-h1, h2, h3, h4, h5, h6 {
+.sidebar-brand__icon {
+    width: 2.8rem;
+    height: 2.8rem;
+    display: grid;
+    place-items: center;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.08);
+    font-size: 1.35rem;
+}
+
+.sidebar-brand__title,
+.sidebar-brand__subtitle {
+    display: block;
+}
+
+.sidebar-brand__title {
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 1rem;
     font-weight: 700;
-    letter-spacing: -0.02em;
-    color: #f1f5f9 !important;
+    color: var(--text-strong) !important;
 }
 
-h1 { font-size: 1.8rem; }
-h2 { font-size: 1.4rem; }
-h3 { font-size: 1.15rem; }
+.sidebar-brand__subtitle {
+    margin-top: 0.15rem;
+    font-size: 0.8rem;
+    color: var(--text-soft) !important;
+}
 
-/* ===== LABEL'LAR ===== */
 [data-testid="stWidgetLabel"] label,
 [data-testid="stWidgetLabel"] p,
-.stSelectbox label,
-.stTextInput label,
-.stTextArea label,
-.stNumberInput label,
+.stCheckbox label,
 .stMultiSelect label,
-.stRadio label,
-.stCheckbox label {
-    color: #cbd5e1 !important;
+.stSelectbox label,
+.stFileUploader label,
+.stTextInput label {
+    color: #cad8ea !important;
+    font-weight: 600 !important;
 }
 
-/* Caption yazıları */
 [data-testid="stCaptionContainer"],
 [data-testid="stCaptionContainer"] p,
 .stCaption {
-    color: #94a3b8 !important;
+    color: var(--text-soft) !important;
 }
 
-/* ===== METRİK KARTLARI ===== */
-[data-testid="stMetric"] {
-    background: rgba(255, 255, 255, 0.04);
+.hero-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr);
+    gap: 1rem;
+    padding: 1.35rem;
+    margin: 0.35rem 0 1rem 0;
+    border-radius: var(--radius-xl);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 14px;
-    padding: 1.25rem;
-    transition: all 0.2s ease;
+    background:
+        linear-gradient(145deg, rgba(255, 122, 89, 0.12), rgba(255, 255, 255, 0.03)),
+        rgba(8, 15, 30, 0.6);
+    box-shadow: var(--shadow-lg);
 }
 
-[data-testid="stMetric"]:hover {
-    background: rgba(255, 255, 255, 0.07);
-    border-color: rgba(255, 75, 75, 0.3);
-    transform: translateY(-1px);
+.hero-copy p {
+    max-width: 42rem;
+    margin: 0.45rem 0 0 0;
+    font-size: 1rem;
+    line-height: 1.7;
+    color: #c3d2e5;
 }
 
-[data-testid="stMetricValue"] {
-    font-size: 2rem;
+.hero-kicker,
+.section-lead__eyebrow,
+.toolbar-card__label,
+.insight-label,
+.summary-title {
+    display: inline-block;
+    margin-bottom: 0.45rem;
+    font-size: 0.76rem;
     font-weight: 800;
-    color: #FF4B4B !important;
-}
-
-[data-testid="stMetricLabel"] {
-    color: #94a3b8 !important;
-    font-size: 0.85rem;
-    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.12em;
+    color: #fdba74;
 }
 
-/* Metrik delta */
-[data-testid="stMetricDelta"] {
-    color: #a5b4fc !important;
+.hero-chips,
+.summary-chip-row,
+.player-meta-stack,
+.empty-shell__steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
 }
 
-/* ===== BUTONLAR ===== */
-.stButton > button {
-    background: linear-gradient(135deg, #FF4B4B 0%, #dc2626 100%);
-    color: #ffffff !important;
-    border: none !important;
-    border-radius: 10px;
-    font-weight: 600;
-    font-size: 0.9rem;
-    padding: 0.5rem 1.25rem;
-    box-shadow: 0 4px 15px rgba(255, 75, 75, 0.25);
-    transition: all 0.2s ease;
+.hero-chip,
+.summary-chip,
+.player-meta-pill,
+.empty-shell__steps span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2rem;
+    padding: 0.35rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-base) !important;
+    font-size: 0.82rem;
+    font-weight: 700;
 }
 
-.stButton > button:hover {
-    box-shadow: 0 6px 25px rgba(255, 75, 75, 0.4);
-    transform: translateY(-1px);
+.summary-chip-muted {
+    color: var(--text-soft) !important;
 }
 
-.stButton > button:active {
-    transform: translateY(0);
+.hero-grid,
+.insight-grid {
+    display: grid;
+    gap: 0.8rem;
 }
 
-/* Secondary buttons (download etc.) */
-.stDownloadButton > button {
-    background: linear-gradient(135deg, #1e293b 0%, #334155 100%) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    color: #e2e8f0 !important;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+.hero-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.stDownloadButton > button:hover {
-    background: linear-gradient(135deg, #334155 0%, #475569 100%) !important;
-    border-color: rgba(255, 75, 75, 0.4) !important;
+.hero-card,
+.insight-card,
+.toolbar-card,
+.share-card,
+.player-sidecard,
+.summary-bar {
+    border: 1px solid var(--line-soft);
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
 }
 
-/* ===== FORM ELEMANLARI ===== */
-input, select, textarea,
-[data-testid="stTextInput"] input,
-[data-testid="stTextArea"] textarea,
-[data-testid="stNumberInput"] input {
-    color: #e2e8f0 !important;
-    background: rgba(15, 23, 42, 0.8) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 8px !important;
-}
-
-input::placeholder, textarea::placeholder {
-    color: #64748b !important;
-}
-
-input:focus, textarea:focus {
-    border-color: rgba(255, 75, 75, 0.5) !important;
-    box-shadow: 0 0 0 2px rgba(255, 75, 75, 0.15) !important;
-}
-
-/* ===== SEKMELER ===== */
-.stTabs [data-baseweb="tab-list"] {
-    gap: 4px;
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 12px;
-    padding: 4px;
-}
-
-.stTabs [data-baseweb="tab"] {
-    border-radius: 8px;
-    color: #94a3b8 !important;
-    font-weight: 600;
-    padding: 8px 16px;
-    transition: all 0.2s ease;
-}
-
-.stTabs [aria-selected="true"] {
-    background: rgba(255, 75, 75, 0.15) !important;
-    color: #FF4B4B !important;
-}
-
-/* ===== TABLO / DATA EDITOR ===== */
-[data-testid="stDataFrame"],
-[data-testid="stDataEditor"] {
-    background: rgba(15, 23, 42, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 12px;
-    overflow: hidden;
-}
-
-/* Tablo hücre yazıları */
-[data-testid="stDataFrame"] td,
-[data-testid="stDataFrame"] th,
-[data-testid="stDataEditor"] td,
-[data-testid="stDataEditor"] th {
-    color: #e2e8f0 !important;
-}
-
-/* ===== OYNATICI ===== */
-[data-testid="stHtml"] {
-    border-radius: 12px;
-    overflow: hidden;
-    background: #000;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-}
-
-/* ===== CHARTS ===== */
-[data-testid="stVegaLiteChart"],
-[data-testid="stArrowVegaLiteChart"] {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 12px;
+.hero-card {
     padding: 1rem;
 }
 
-/* ===== ALERT / INFO BOXES ===== */
-[data-testid="stAlert"] {
-    border-radius: 10px;
-    border-left-width: 4px;
+.hero-card span,
+.hero-card small {
+    display: block;
 }
 
-/* Success mesajları */
-[data-testid="stAlert"] p {
-    color: inherit !important;
+.hero-card span {
+    color: var(--text-soft);
+    font-size: 0.82rem;
 }
 
-/* ===== EXPANDER ===== */
-[data-testid="stExpander"] {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 12px;
+.hero-card strong {
+    display: block;
+    margin: 0.4rem 0 0.2rem;
+    font-size: 1.6rem;
+    color: var(--text-strong);
 }
 
-[data-testid="stExpander"] summary span {
-    color: #e2e8f0 !important;
+.hero-card small {
+    color: #b9c8db;
+    line-height: 1.5;
 }
 
-/* ===== PROGRESS BAR ===== */
-.stProgress > div > div {
-    background: linear-gradient(90deg, #FF4B4B, #f97316) !important;
-    border-radius: 8px;
+.summary-bar {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.9rem 1rem;
+    margin-bottom: 1rem;
 }
 
-/* ===== SELECTBOX — KAPSAMLI DARK MODE ===== */
+.insight-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 1rem 0 1.1rem;
+}
 
-/* Selectbox konteyner (kapalı hali) */
-[data-testid="stSelectbox"] [data-baseweb="select"] > div {
-    background: rgba(15, 23, 42, 0.8) !important;
+.insight-card {
+    padding: 1rem 1.1rem;
+}
+
+.insight-list {
+    list-style: none;
+    margin: 0.3rem 0 0;
+    padding: 0;
+}
+
+.insight-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.68rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.insight-list li:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+}
+
+.insight-list strong {
+    color: var(--text-strong);
+}
+
+.status-swatch-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.4rem;
+}
+
+.status-swatch {
+    padding: 0.95rem 0.8rem;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.status-swatch strong,
+.status-swatch span {
+    display: block;
+}
+
+.status-swatch strong {
+    margin-bottom: 0.25rem;
+    font-size: 1.4rem;
+    color: var(--text-strong);
+}
+
+.status-swatch span {
+    color: var(--text-soft);
+}
+
+.status-swatch-active {
+    background: rgba(34, 197, 94, 0.12);
+}
+
+.status-swatch-pending {
+    background: rgba(251, 191, 36, 0.12);
+}
+
+.status-swatch-error {
+    background: rgba(251, 113, 133, 0.12);
+}
+
+.section-lead {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 1.2rem 0 0.85rem;
+}
+
+.section-lead h3 {
+    margin: 0;
+}
+
+.toolbar-card,
+.share-card,
+.player-sidecard {
+    padding: 1rem 1.05rem;
+}
+
+.toolbar-card strong {
+    display: block;
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 1.9rem;
+    color: var(--text-strong);
+}
+
+.toolbar-card small {
+    display: block;
+    color: var(--text-soft);
+    line-height: 1.5;
+}
+
+.toolbar-card-soft {
+    margin-top: 1.45rem;
+}
+
+.share-card {
+    margin-top: 0.65rem;
+    margin-bottom: 0.45rem;
+}
+
+.share-card h4,
+.player-sidecard h4 {
+    margin: 0;
+}
+
+.player-sidecard__label {
+    display: inline-block;
+    margin-bottom: 0.45rem;
+    color: var(--text-soft);
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+[data-testid="stMetric"] {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-lg);
+    padding: 1.15rem;
+    box-shadow: var(--shadow-md);
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+[data-testid="stMetric"]:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 122, 89, 0.28);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.035));
+}
+
+[data-testid="stMetricValue"] {
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-strong) !important;
+}
+
+[data-testid="stMetricLabel"] {
+    color: var(--text-soft) !important;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.stButton > button,
+.stDownloadButton > button {
+    min-height: 3rem;
+    border-radius: 14px !important;
+    font-weight: 700 !important;
+    font-size: 0.92rem !important;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease !important;
+}
+
+.stButton > button {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%) !important;
+    color: #fff !important;
+    border: 0 !important;
+    box-shadow: 0 14px 30px rgba(249, 115, 22, 0.22);
+}
+
+.stButton > button:hover,
+.stDownloadButton > button:hover {
+    transform: translateY(-1px);
+}
+
+.stDownloadButton > button {
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95)) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    color: var(--text-strong) !important;
+    box-shadow: 0 12px 28px rgba(3, 7, 18, 0.18);
+}
+
+input,
+select,
+textarea,
+[data-testid="stTextInput"] input,
+[data-testid="stTextArea"] textarea,
+[data-testid="stNumberInput"] input,
+[data-testid="stSelectbox"] [data-baseweb="select"] > div,
+[data-testid="stMultiSelect"] [data-baseweb="select"] > div {
+    color: var(--text-base) !important;
+    background: rgba(8, 15, 30, 0.7) !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 8px !important;
+    border-radius: 14px !important;
 }
 
-/* Seçili değer metni */
-[data-testid="stSelectbox"] [data-baseweb="select"] span,
-[data-testid="stSelectbox"] [data-baseweb="select"] div[role="combobox"],
-[data-testid="stSelectbox"] [data-baseweb="select"] input {
-    color: #e2e8f0 !important;
+input::placeholder,
+textarea::placeholder {
+    color: #6b809a !important;
 }
 
-/* Placeholder metni */
-[data-testid="stSelectbox"] [data-baseweb="select"] [data-baseweb="select-placeholder"],
-[data-testid="stSelectbox"] [data-baseweb="select"] div[aria-selected="false"] {
-    color: #64748b !important;
+input:focus,
+textarea:focus,
+[data-testid="stSelectbox"] [data-baseweb="select"] > div:focus-within,
+[data-testid="stMultiSelect"] [data-baseweb="select"] > div:focus-within {
+    border-color: rgba(255, 122, 89, 0.45) !important;
+    box-shadow: 0 0 0 3px rgba(255, 122, 89, 0.14) !important;
 }
 
-/* Ok ikonu (chevron) */
-[data-testid="stSelectbox"] [data-baseweb="select"] svg {
-    fill: #94a3b8 !important;
-    color: #94a3b8 !important;
-}
-
-/* Açılan dropdown listesi (popover) */
 [data-baseweb="popover"] {
-    background: #1e293b !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 10px !important;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
+    background: #111c2c !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 16px !important;
+    box-shadow: var(--shadow-lg) !important;
 }
 
-[data-baseweb="popover"] ul {
-    background: #1e293b !important;
-}
-
-/* Dropdown liste öğeleri */
+[data-baseweb="popover"] ul,
 [data-baseweb="popover"] li,
-[data-baseweb="popover"] [role="option"],
 [data-baseweb="menu"] li,
 [data-baseweb="menu"] [role="option"] {
-    background: #1e293b !important;
-    color: #e2e8f0 !important;
+    background: #111c2c !important;
+    color: var(--text-base) !important;
 }
 
-/* Dropdown hover */
-[data-baseweb="popover"] li:hover,
 [data-baseweb="popover"] [role="option"]:hover,
-[data-baseweb="popover"] li[aria-selected="true"],
-[data-baseweb="menu"] li:hover,
-[data-baseweb="menu"] [role="option"]:hover {
-    background: rgba(255, 75, 75, 0.15) !important;
-    color: #FF4B4B !important;
-}
-
-/* Dropdown aktif/seçili öğe */
+[data-baseweb="menu"] [role="option"]:hover,
 [data-baseweb="popover"] li[aria-selected="true"],
 [data-baseweb="menu"] li[aria-selected="true"] {
-    background: rgba(255, 75, 75, 0.2) !important;
-    color: #FF4B4B !important;
+    background: rgba(255, 122, 89, 0.14) !important;
+    color: #ffd6c7 !important;
 }
 
-/* Dropdown arama kutusu (varsa) */
-[data-baseweb="popover"] input {
-    background: rgba(15, 23, 42, 0.9) !important;
-    color: #e2e8f0 !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-}
-
-/* Dropdown boş durum mesajı */
-[data-baseweb="popover"] [role="option"][aria-disabled="true"],
-[data-baseweb="menu"] [role="option"][aria-disabled="true"] {
-    color: #64748b !important;
-}
-
-/* Focus durumu */
-[data-testid="stSelectbox"] [data-baseweb="select"] > div:focus-within {
-    border-color: rgba(255, 75, 75, 0.5) !important;
-    box-shadow: 0 0 0 2px rgba(255, 75, 75, 0.15) !important;
-}
-
-/* ===== MULTISELECT — KAPSAMLI DARK MODE ===== */
-
-/* Multiselect konteyner */
-[data-testid="stMultiSelect"] [data-baseweb="select"] > div {
-    background: rgba(15, 23, 42, 0.8) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 8px !important;
-}
-
-/* Multiselect metin */
-[data-testid="stMultiSelect"] [data-baseweb="select"] span,
-[data-testid="stMultiSelect"] [data-baseweb="select"] input {
-    color: #e2e8f0 !important;
-}
-
-/* Multiselect placeholder */
-[data-testid="stMultiSelect"] [data-baseweb="select"] [data-baseweb="select-placeholder"] {
-    color: #64748b !important;
-}
-
-/* Multiselect ok ikonu */
-[data-testid="stMultiSelect"] [data-baseweb="select"] svg {
-    fill: #94a3b8 !important;
-    color: #94a3b8 !important;
-}
-
-/* Multiselect tag'ler */
 [data-testid="stMultiSelect"] [data-baseweb="tag"] {
-    background: rgba(255, 75, 75, 0.2) !important;
-    border-color: rgba(255, 75, 75, 0.3) !important;
-}
-
-[data-testid="stMultiSelect"] [data-baseweb="tag"] span {
-    color: #f1f5f9 !important;
-}
-
-/* Multiselect tag silme ikonu */
-[data-testid="stMultiSelect"] [data-baseweb="tag"] svg {
-    fill: #f1f5f9 !important;
-}
-
-/* Multiselect focus */
-[data-testid="stMultiSelect"] [data-baseweb="select"] > div:focus-within {
-    border-color: rgba(255, 75, 75, 0.5) !important;
-    box-shadow: 0 0 0 2px rgba(255, 75, 75, 0.15) !important;
-}
-
-/* ===== CHECKBOX ===== */
-[data-testid="stCheckbox"] label span {
-    color: #cbd5e1 !important;
-}
-
-/* ===== FILE UPLOADER ===== */
-[data-testid="stFileUploader"] label,
-[data-testid="stFileUploader"] span,
-[data-testid="stFileUploader"] p {
-    color: #cbd5e1 !important;
+    background: rgba(255, 122, 89, 0.18) !important;
+    border-color: rgba(255, 122, 89, 0.28) !important;
 }
 
 [data-testid="stFileUploader"] section {
-    background: rgba(15, 23, 42, 0.5) !important;
+    background: rgba(8, 15, 30, 0.58) !important;
     border: 1px dashed rgba(255, 255, 255, 0.15) !important;
-    border-radius: 10px !important;
+    border-radius: 16px !important;
 }
 
-/* ===== NUMBER INPUT ===== */
-[data-testid="stNumberInput"] label {
-    color: #cbd5e1 !important;
+[data-testid="stAlert"] {
+    border-radius: 16px;
+    border-left-width: 4px;
 }
 
-/* ===== RADIO ===== */
-[data-testid="stRadio"] label {
-    color: #cbd5e1 !important;
+[data-testid="stDataFrame"],
+[data-testid="stHtml"] {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--line-soft);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+    background: rgba(8, 15, 30, 0.64);
 }
 
-/* ===== MARKDOWN İÇİNDEKİ BOLD ===== */
-[data-testid="stMarkdownContainer"] strong {
-    color: #f1f5f9 !important;
+[data-testid="stDataFrame"] th,
+[data-testid="stDataFrame"] td {
+    color: var(--text-base) !important;
 }
 
-/* ===== DIVIDER ===== */
+[data-testid="stDataFrame"] [role="columnheader"] {
+    background: rgba(255, 255, 255, 0.03) !important;
+}
+
+.empty-shell {
+    max-width: 840px;
+    margin: 3rem auto 2rem;
+    padding: 2.4rem 1.5rem;
+    text-align: center;
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        linear-gradient(145deg, rgba(255, 122, 89, 0.14), rgba(255, 255, 255, 0.02)),
+        rgba(8, 15, 30, 0.7);
+    box-shadow: var(--shadow-lg);
+}
+
+.empty-shell__icon {
+    font-size: 4.5rem;
+    margin-bottom: 1rem;
+}
+
+.empty-shell p {
+    max-width: 40rem;
+    margin: 0.65rem auto 1.15rem;
+    line-height: 1.75;
+    color: #c3d2e5;
+}
+
 hr {
     border-color: rgba(255, 255, 255, 0.06) !important;
 }
 
-/* ===== SCROLLBAR ===== */
 ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.1);
+    background: rgba(255, 255, 255, 0.04);
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.25);
-}
-
-/* ===== FOOTER ===== */
-.footer {
-    text-align: center;
-    padding: 2.5rem;
-    margin-top: 4rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    color: #64748b;
-}
-
-/* ===== ANİMASYONLAR ===== */
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .fade-in {
-    animation: fadeIn 0.4s ease-out;
+    animation: fadeIn 0.45s ease-out;
 }
 
-/* ===== RESPONSIVE ===== */
+@media (max-width: 960px) {
+    .hero-panel,
+    .insight-grid,
+    .hero-grid,
+    .status-swatch-row {
+        grid-template-columns: 1fr;
+    }
+
+    h1 {
+        font-size: 2rem;
+    }
+}
+
 @media (max-width: 768px) {
-    [data-testid="stAppViewContainer"] {
-        padding: 0.5rem !important;
-    }
-    
-    [data-testid="stMetric"] {
-        padding: 0.75rem;
-        margin-bottom: 0.5rem;
-    }
-    
     [data-testid="stMetricValue"] {
-        font-size: 1.4rem;
+        font-size: 1.55rem;
     }
-    
-    h1 { font-size: 1.3rem; }
-    h2 { font-size: 1.1rem; }
-    
-    /* Butonları mobilde tam genişlik yap */
-    .stButton > button {
-        width: 100% !important;
-        margin-bottom: 0.5rem;
-    }
-    
-    /* Video oynatıcıyı mobilde optimize et */
-    [data-testid="stHtml"] {
-        border-radius: 8px;
-        box-shadow: none;
-    }
-    
-    /* Tablo sütunlarını mobilde biraz daha daralt veya optimize et */
-    [data-testid="stDataFrame"] {
-        font-size: 0.85rem;
-    }
-}
 
-/* Küçük telefonlar için ekstra ayarlar */
-@media (max-width: 480px) {
-    [data-testid="stMetricValue"] {
-        font-size: 1.2rem;
+    .hero-panel,
+    .summary-bar,
+    .empty-shell {
+        padding: 1.1rem;
     }
-    
-    [data-testid="stSidebar"] {
+
+    .stButton > button,
+    .stDownloadButton > button {
         width: 100% !important;
     }
 }
