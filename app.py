@@ -110,94 +110,6 @@ def _status_counts(df: pd.DataFrame) -> dict[str, int]:
     }
 
 
-def _render_hero(total_visible: int, total_all: int, group_count: int, hls_count: int, status_counts: dict[str, int]) -> None:
-    st.markdown(
-        f"""
-        <section class="hero-panel fade-in">
-            <div class="hero-copy">
-                <span class="hero-kicker">Akıllı IPTV Çalışma Alanı</span>
-                <h1>{PAGE_ICON} {html.escape(PAGE_TITLE)}</h1>
-                <p>Kanalları tara, filtrele, kontrol et ve tek ekrandan güvenle oynat.</p>
-                <div class="hero-chips">
-                    <span class="hero-chip">Gösterilen {total_visible}</span>
-                    <span class="hero-chip">Toplam {total_all}</span>
-                    <span class="hero-chip">Aktif {status_counts['active']}</span>
-                </div>
-            </div>
-            <div class="hero-grid">
-                <div class="hero-card">
-                    <span>Grup</span>
-                    <strong>{group_count}</strong>
-                    <small>Farklı yayın kategorisi</small>
-                </div>
-                <div class="hero-card">
-                    <span>HLS</span>
-                    <strong>{hls_count}</strong>
-                    <small>Canlı oynatmaya uygun</small>
-                </div>
-                <div class="hero-card">
-                    <span>Bekleyen</span>
-                    <strong>{status_counts['pending']}</strong>
-                    <small>Henüz sağlık kontrolünden geçmeyen</small>
-                </div>
-            </div>
-        </section>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def _render_filter_summary(selected_groups: list[str], selected_types: list[str], selected_statuses: list[str], search_term: str) -> None:
-    chips: list[str] = []
-    if search_term:
-        chips.append(f'<span class="summary-chip">Arama: {html.escape(search_term)}</span>')
-    chips.extend(f'<span class="summary-chip">Grup: {html.escape(value)}</span>' for value in selected_groups)
-    chips.extend(f'<span class="summary-chip">Tür: {html.escape(value)}</span>' for value in selected_types)
-    chips.extend(f'<span class="summary-chip">Durum: {html.escape(value)}</span>' for value in selected_statuses)
-    if not chips:
-        chips.append('<span class="summary-chip summary-chip-muted">Tüm kanallar gösteriliyor</span>')
-
-    st.markdown(
-        f"""
-        <div class="summary-bar">
-            <div>
-                <span class="summary-title">Aktif filtreler</span>
-                <div class="summary-chip-row">{''.join(chips)}</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def _render_insights(df_display: pd.DataFrame, status_counts: dict[str, int]) -> None:
-    top_groups = df_display["Grup"].astype(str).value_counts().head(4)
-    group_items = "".join(
-        f"<li><span>{html.escape(group)}</span><strong>{count}</strong></li>"
-        for group, count in top_groups.items()
-    ) or "<li><span>Veri yok</span><strong>0</strong></li>"
-
-    st.markdown(
-        f"""
-        <div class="insight-grid">
-            <div class="insight-card">
-                <span class="insight-label">Öne Çıkan Gruplar</span>
-                <ul class="insight-list">{group_items}</ul>
-            </div>
-            <div class="insight-card">
-                <span class="insight-label">Durum Özeti</span>
-                <div class="status-swatch-row">
-                    <div class="status-swatch status-swatch-active"><strong>{status_counts['active']}</strong><span>Aktif</span></div>
-                    <div class="status-swatch status-swatch-pending"><strong>{status_counts['pending']}</strong><span>Bekliyor</span></div>
-                    <div class="status-swatch status-swatch-error"><strong>{status_counts['error']}</strong><span>Hatalı</span></div>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def _status_style(value: str) -> str:
     status_text = str(value)
     if "✅" in status_text:
@@ -573,20 +485,16 @@ if not st.session_state.data.empty:
     if selected_statuses:
         df_display = df_display[df_display["Durum"].isin(selected_statuses)]
 
-    toolbar_search, toolbar_info = st.columns([2.2, 1])
-    with toolbar_search:
-        search_term = st.text_input("🔍 Kanal Ara:", "", placeholder="Kanal adı veya grup yazın...")
-    with toolbar_info:
-        st.markdown(
-            f"""
-            <div class="toolbar-card">
-                <span class="toolbar-card__label">Görünüm</span>
-                <strong>{len(df_display)}</strong>
-                <small>kanal şu an filtre kapsamında</small>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        f"""
+        <div class="page-header fade-in">
+            <h1>{PAGE_ICON} {html.escape(PAGE_TITLE)}</h1>
+            <p>Kanalları filtreleyin, sağlık kontrolü yapın ve doğrudan oynatın.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    search_term = st.text_input("🔍 Kanal Ara:", "", placeholder="Kanal adı veya grup yazın...")
     if search_term:
         df_display = df_display[
             _safe_contains(df_display["Kanal Adı"], search_term)
@@ -597,9 +505,6 @@ if not st.session_state.data.empty:
     group_count = df_display["Grup"].nunique()
     hls_count = int((df_display["Tür"] == "HLS").sum()) if "Tür" in df_display.columns else 0
 
-    _render_hero(len(df_display), len(st.session_state.data), group_count, hls_count, status_counts)
-    _render_filter_summary(selected_groups, selected_types, selected_statuses, search_term)
-
     mc1, mc2, mc3, mc4 = st.columns(4)
     mc1.metric("📺 Görünen", len(df_display))
     mc2.metric("📁 Grup", group_count)
@@ -607,18 +512,19 @@ if not st.session_state.data.empty:
     mc4.metric("📡 HLS", hls_count)
     st.caption(f"Gösterilen: {len(df_display)} / {len(st.session_state.data)} kanal")
 
-    _render_insights(df_display, status_counts)
+    active_filters = []
+    if search_term:
+        active_filters.append(f"Arama: {search_term}")
+    active_filters.extend(f"Grup: {value}" for value in selected_groups)
+    active_filters.extend(f"Tür: {value}" for value in selected_types)
+    active_filters.extend(f"Durum: {value}" for value in selected_statuses)
+    summary_text = " • ".join(active_filters) if active_filters else "Tüm kanallar gösteriliyor"
     st.markdown(
-        """
-        <div class="section-lead">
-            <div>
-                <span class="section-lead__eyebrow">İşlemler</span>
-                <h3>Listeyi dışa aktar veya sağlık taramasını başlat</h3>
-            </div>
-        </div>
-        """,
+        f"<div class='simple-strip'><strong>Filtreler</strong><span>{html.escape(summary_text)}</span></div>",
         unsafe_allow_html=True,
     )
+
+    st.markdown("### İşlemler")
 
     # --- İşlemler ---
     m3u_out = convert_df_to_m3u(df_display)
@@ -695,43 +601,12 @@ if not st.session_state.data.empty:
             st.rerun()
 
     if st.session_state.get("m3u_link"):
-        st.markdown(
-            """
-            <div class="share-card">
-                <span class="section-lead__eyebrow">Hazır Bağlantı</span>
-                <h4>Oluşturulan M3U linki</h4>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown("### Paylaşım Linki")
         st.code(st.session_state.m3u_link, language=None)
         st.caption("☝️ Bu linki IPTV oynatıcına yapıştırabilirsin.")
 
     # --- Canlı Oynatıcı ---
-    st.markdown(
-        """
-        <div class="section-lead section-lead-player">
-            <div>
-                <span class="section-lead__eyebrow">Canlı İzleme</span>
-                <h3>Doğrudan tarayıcı içinde oynat</h3>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    selector_col, selector_meta = st.columns([2.2, 1])
-    with selector_meta:
-        st.markdown(
-            f"""
-            <div class="toolbar-card toolbar-card-soft">
-                <span class="toolbar-card__label">Hazır kanal</span>
-                <strong>{len(df_display)}</strong>
-                <small>oynatılabilir seçim listede görünüyor</small>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    st.markdown("### 🎬 Canlı Oynatıcı")
 
     play_options = []      # display name listesi
     play_url_map = {}      # display_name → {name, url, logo, group, durum}
@@ -767,13 +642,12 @@ if not st.session_state.data.empty:
                 default_index = i + 1  # +1 çünkü "Seçiniz..." 0. index
                 break
 
-    with selector_col:
-        play_name_display = st.selectbox(
-            "Oynatılacak Kanal",
-            options=["Seçiniz..."] + play_options,
-            index=default_index,
-            key="play_select_auto"
-        )
+    play_name_display = st.selectbox(
+        "Oynatılacak Kanal",
+        options=["Seçiniz..."] + play_options,
+        index=default_index,
+        key="play_select_auto"
+    )
 
     # ✅ FIX: Gereksiz rerun kaldırıldı — sadece state güncelleniyor
     if play_name_display != "Seçiniz...":
@@ -792,24 +666,16 @@ if not st.session_state.data.empty:
 
     if st.session_state.play_channel:
         pc = st.session_state.play_channel
-        pcol1, pcol2 = st.columns([1.1, 3.9])
+        pcol1, pcol2 = st.columns([1, 4])
         with pcol1:
             if pc.get("logo"):
                 try:
-                    st.image(pc["logo"], width=140)
+                    st.image(pc["logo"], width=120)
                 except Exception:
                     pass
             st.markdown(
-                f"""
-                <div class="player-sidecard">
-                    <span class="player-sidecard__label">Seçili Kanal</span>
-                    <h4>{html.escape(pc['name'])}</h4>
-                    <div class="player-meta-stack">
-                        <span class="player-meta-pill">{html.escape(pc.get('group', 'Genel'))}</span>
-                        <span class="player-meta-pill">{html.escape(pc.get('durum', 'Durum yok'))}</span>
-                    </div>
-                </div>
-                """,
+                f"<span style='color:#94a3b8;'>Grup:</span> "
+                f"<span style='color:#f1f5f9;font-weight:600;'>{pc.get('group', '')}</span>",
                 unsafe_allow_html=True,
             )
             if "CORS" in pc.get("durum", ""):
@@ -839,17 +705,7 @@ if not st.session_state.data.empty:
         st.markdown("---")
 
     # --- Kanal Tablosu ---
-    st.markdown(
-        """
-        <div class="section-lead">
-            <div>
-                <span class="section-lead__eyebrow">Kanal Tablosu</span>
-                <h3>Filtrelenen sonuçları tek bakışta incele</h3>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("### Kanal Tablosu")
     display_cols = [c for c in ["Durum", "Grup", "Kanal Adı", "URL", "Tür"] if c in df_display.columns]
     table_df = df_display[display_cols] if display_cols else df_display
     styled_df = table_df.style
@@ -874,15 +730,10 @@ if not st.session_state.data.empty:
 
 else:
     st.markdown(
-        "<div class='empty-shell fade-in'>"
-        f"<div class='empty-shell__icon'>{PAGE_ICON}</div>"
+        "<div class='empty-state fade-in'>"
+        f"<div class='empty-state__icon'>{PAGE_ICON}</div>"
         f"<h2>{PAGE_TITLE}</h2>"
-        "<p>Sol menüden bir M3U linki yapıştırın veya dosya yükleyin. Liste geldikten sonra filtreleyebilir, sağlık kontrolü yapabilir ve canlı oynatabilirsiniz.</p>"
-        "<div class='empty-shell__steps'>"
-        "<span>1. Listeyi yükleyin</span>"
-        "<span>2. Filtreleri uygulayın</span>"
-        "<span>3. Kanalı doğrudan oynatın</span>"
-        "</div>"
+        "<p>Sol menüden bir M3U linki yapıştırın veya dosya yükleyin.</p>"
         "</div>",
         unsafe_allow_html=True,
     )
