@@ -559,27 +559,6 @@ if not st.session_state.data.empty:
     # --- Canlı Oynatıcı ---
     st.markdown("### 🎬 Canlı Oynatıcı")
 
-    # ✅ FIX: Unique display names (index ekleyerek duplicate önleme)
-    with st.expander("Kanal düzenleyici", expanded=False):
-        editor_columns = [c for c in ["Kanal Adı", "Grup", "URL", "LogoURL", "Tür", "Durum"] if c in df_display.columns]
-        editor_source = df_display[editor_columns].copy()
-        edited_df = st.data_editor(
-            editor_source,
-            use_container_width=True,
-            hide_index=True,
-            key="channel_editor",
-            disabled=["Tür", "Durum"],
-            column_config={
-                "URL": st.column_config.TextColumn("URL", width="large"),
-                "LogoURL": st.column_config.TextColumn("Logo URL", width="medium"),
-                "Tür": st.column_config.TextColumn("Tür", width="small"),
-                "Durum": st.column_config.TextColumn("Durum", width="small"),
-            },
-        )
-        if not edited_df.equals(editor_source):
-            st.session_state.data.loc[edited_df.index, editor_columns] = edited_df[editor_columns]
-            st.success("Düzenlemeler bellekte güncellendi.")
-
     play_options = []      # display name listesi
     play_url_map = {}      # display_name → {name, url, logo, group, durum}
 
