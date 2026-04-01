@@ -1,16 +1,12 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
-import urllib.request
 import urllib.error
-import ssl
-import re
 import io
 import os
 import sys
 import time
 import logging
-import urllib.parse
 from datetime import datetime
 
 # --- MODÜL YOLLARI ---
@@ -23,7 +19,8 @@ try:
     from utils.config import (
         PAGE_TITLE, PAGE_ICON, REQUEST_TIMEOUT, USER_AGENT,
         DEFAULT_TR_FILTER, TABLE_HEIGHT, DISABLE_SSL_VERIFY,
-        APP_VERSION, HEALTH_CHECK_MAX_WORKERS, HEALTH_CHECK_TIMEOUT
+        APP_VERSION, HEALTH_CHECK_MAX_WORKERS, HEALTH_CHECK_TIMEOUT,
+        HEALTH_CHECK_MAX_CHANNELS,
     )
 except ImportError:
     PAGE_TITLE = "M3U Editör Pro"
@@ -36,6 +33,7 @@ except ImportError:
     APP_VERSION = "2.0.0"
     HEALTH_CHECK_MAX_WORKERS = 10
     HEALTH_CHECK_TIMEOUT = 5
+    HEALTH_CHECK_MAX_CHANNELS = 50
 
 # --- LOG ---
 if not logging.getLogger().hasHandlers():
@@ -52,6 +50,7 @@ st.set_page_config(
 
 # --- YARDIMCI MODÜLLER ---
 from utils.parser import parse_m3u_lines, filter_channels, convert_df_to_m3u, batch_check_health
+from utils import network as network_utils
 from utils.visitor_counter import VisitorCounter
 from utils.proxy_server import LocalProxyServer
 
@@ -73,15 +72,6 @@ def _load_css():
 _load_css()
 
 
-# --- SSL CONTEXT ---
-def _create_ssl_context():
-    ctx = ssl.create_default_context()
-    if DISABLE_SSL_VERIFY:
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-    return ctx
-
-
 # --- SİSTEMLER ---
 vc = VisitorCounter()
 
@@ -94,44 +84,20 @@ def _safe_contains(series: pd.Series, term: str) -> pd.Series:
     return series.astype(str).str.contains(term, case=False, na=False, regex=False)
 
 
+def _ensure_channel_columns(df: pd.DataFrame) -> pd.DataFrame:
+    for column_name, default_value in [("LogoURL", ""), ("Tür", ""), ("Durum", "❔ Bekliyor")]:
+        if column_name not in df.columns:
+            df[column_name] = default_value
+    return df
+
+
 def create_m3u_link(m3u_content: str) -> str:
-    """Filtrelenmiş M3U içeriğini paste servisine yükleyip raw link döndürür."""
-    ctx = _create_ssl_context()
-
-    # 1) paste.rs
-    try:
-        req = urllib.request.Request(
-            "https://paste.rs/",
-            data=m3u_content.encode("utf-8"),
-            headers={"User-Agent": USER_AGENT, "Content-Type": "text/plain"},
-        )
-        with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
-            paste_url = resp.read().decode("utf-8").strip()
-            if paste_url.startswith("http"):
-                return paste_url
-    except Exception as e:
-        logger.warning(f"paste.rs hatası: {e}")
-
-    # 2) dpaste.com
-    try:
-        data = urllib.parse.urlencode({
-            "content": m3u_content,
-            "syntax": "text",
-            "expiry_days": 365,
-        }).encode("utf-8")
-        req = urllib.request.Request(
-            "https://dpaste.com/api/v2/",
-            data=data,
-            headers={"User-Agent": USER_AGENT},
-        )
-        with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
-            paste_url = resp.read().decode("utf-8").strip().strip('"')
-            if not paste_url.endswith(".txt"):
-                paste_url = paste_url.rstrip("/") + ".txt"
-            return paste_url
-    except Exception as e:
-        logger.error(f"M3U link oluşturma hatası: {e}", exc_info=True)
-        return ""
+    """Backward-compatible wrapper around the shared network helper."""
+    return network_utils.create_m3u_link(
+        m3u_content,
+        user_agent=USER_AGENT,
+        disable_ssl_verify=DISABLE_SSL_VERIFY,
+    )
 
 
 def render_live_player(stream_url: str, height: int = 420) -> str:
@@ -413,10 +379,12 @@ with st.sidebar:
         if url:
             try:
                 with st.spinner("Link indiriliyor..."):
-                    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-                    ctx = _create_ssl_context()
-                    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT, context=ctx) as resp:
-                        source_lines = resp.readlines()
+                    source_lines = network_utils.fetch_m3u_source(
+                        url,
+                        user_agent=USER_AGENT,
+                        timeout=REQUEST_TIMEOUT,
+                        disable_ssl_verify=DISABLE_SSL_VERIFY,
+                    )
             except urllib.error.HTTPError as e:
                 st.error(f"🚫 HTTP Hatası: {e.code}")
             except urllib.error.URLError as e:
@@ -436,7 +404,7 @@ with st.sidebar:
             filtered = filter_channels(raw, only_tr)
             elapsed = round(time.time() - start, 2)
             if filtered:
-                df = pd.DataFrame(filtered)
+                df = _ensure_channel_columns(pd.DataFrame(filtered))
                 for col, default in [("LogoURL", ""), ("Tür", ""), ("Durum", "❔ Bekliyor")]:
                     if col not in df.columns:
                         df[col] = default
@@ -450,6 +418,8 @@ with st.sidebar:
 
     # Filtreler
     selected_groups = []
+    selected_types = []
+    selected_statuses = []
     if not st.session_state.data.empty:
         st.markdown("#### ⚙️ Filtre")
         try:
@@ -459,8 +429,16 @@ with st.sidebar:
         if group_options:
             selected_groups = st.multiselect("Grupları filtrele", group_options, default=None, key="group_filter")
 
+        type_options = sorted(st.session_state.data.get("Tür", pd.Series(dtype=str)).astype(str).dropna().unique())
+        if type_options:
+            selected_types = st.multiselect("Yayın türü", type_options, default=None, key="type_filter")
+        status_options = sorted(st.session_state.data.get("Durum", pd.Series(dtype=str)).astype(str).dropna().unique())
+        if status_options:
+            selected_statuses = st.multiselect("Duruma göre", status_options, default=None, key="status_filter")
+
     # İstatistikler
     st.markdown("---")
+
     stats = vc.get_stats()
     st.markdown(f"**👥 Toplam Ziyaret:** {stats['total_visits']}")
     st.markdown(f"**👤 Tekil Ziyaretçi:** {stats['unique_visitors']}")
@@ -479,6 +457,10 @@ if not st.session_state.data.empty:
     df_display = st.session_state.data.copy()
     if selected_groups:
         df_display = df_display[df_display["Grup"].isin(selected_groups)]
+    if selected_types:
+        df_display = df_display[df_display["Tür"].isin(selected_types)]
+    if selected_statuses:
+        df_display = df_display[df_display["Durum"].isin(selected_statuses)]
 
     # Arama
     search_term = st.text_input("🔍 Kanal Ara:", "", placeholder="Kanal adı veya grup yazın...")
@@ -511,7 +493,11 @@ if not st.session_state.data.empty:
     with act2:
         if st.button("🔗 M3U Link Oluştur", use_container_width=True):
             with st.spinner("Link oluşturuluyor..."):
-                link = create_m3u_link(m3u_out)
+                link = network_utils.create_m3u_link(
+                    m3u_out,
+                    user_agent=USER_AGENT,
+                    disable_ssl_verify=DISABLE_SSL_VERIFY,
+                )
             if link:
                 st.session_state.m3u_link = link
                 st.success("Link hazır!")
@@ -519,8 +505,11 @@ if not st.session_state.data.empty:
                 st.error("Link oluşturulamadı.")
     with act3:
         if st.button("🔍 Sağlık Kontrolü", use_container_width=True):
-            urls = df_display["URL"].tolist()
+            max_health_channels = HEALTH_CHECK_MAX_CHANNELS if HEALTH_CHECK_MAX_CHANNELS > 0 else len(df_display)
+            urls = df_display["URL"].head(max_health_channels).tolist()
             total = len(urls)
+            if len(df_display) > total:
+                st.info(f"Sağlık kontrolü ilk {total} kanal ile sınırlandı.")
 
             progress_bar = st.progress(0, text=f"🔍 Taranıyor... 0/{total}")
             status_text = st.empty()
@@ -571,6 +560,26 @@ if not st.session_state.data.empty:
     st.markdown("### 🎬 Canlı Oynatıcı")
 
     # ✅ FIX: Unique display names (index ekleyerek duplicate önleme)
+    with st.expander("Kanal düzenleyici", expanded=False):
+        editor_columns = [c for c in ["Kanal Adı", "Grup", "URL", "LogoURL", "Tür", "Durum"] if c in df_display.columns]
+        editor_source = df_display[editor_columns].copy()
+        edited_df = st.data_editor(
+            editor_source,
+            use_container_width=True,
+            hide_index=True,
+            key="channel_editor",
+            disabled=["Tür", "Durum"],
+            column_config={
+                "URL": st.column_config.TextColumn("URL", width="large"),
+                "LogoURL": st.column_config.TextColumn("Logo URL", width="medium"),
+                "Tür": st.column_config.TextColumn("Tür", width="small"),
+                "Durum": st.column_config.TextColumn("Durum", width="small"),
+            },
+        )
+        if not edited_df.equals(editor_source):
+            st.session_state.data.loc[edited_df.index, editor_columns] = edited_df[editor_columns]
+            st.success("Düzenlemeler bellekte güncellendi.")
+
     play_options = []      # display name listesi
     play_url_map = {}      # display_name → {name, url, logo, group, durum}
 
