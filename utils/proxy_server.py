@@ -10,6 +10,12 @@ import re
 
 logger = logging.getLogger(__name__)
 
+# Config'den tarayıcı User-Agent'ını çek, hata durumunda güvenli bir varsayılan kullan
+try:
+    from utils.config import USER_AGENT
+except ImportError:
+    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
 proxy_ssl_ctx = ssl.create_default_context()
 proxy_ssl_ctx.check_hostname = False
 proxy_ssl_ctx.verify_mode = ssl.CERT_NONE
@@ -42,6 +48,34 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
 
     def _handle_request(self, send_body=True):
         parsed_path = urllib.parse.urlparse(self.path)
+        
+        # ── 🆕 YEREL ROTA: /playlist.m3u veya /playlist ──
+        # Bu rota, kullanıcının oluşturduğu M3U çalma listesini yerel proxy üzerinden sunar.
+        # İnternet bağlantısına veya pastebin sitelerine ihtiyaç duyulmadan çalışır!
+        if parsed_path.path in ("/playlist.m3u", "/playlist"):
+            proxy_instance = getattr(self.server, "proxy_instance", None)
+            content = getattr(proxy_instance, "m3u_content", None) if proxy_instance else None
+            
+            if not content:
+                self.send_response(404)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                if send_body:
+                    self.wfile.write("Henüz bir çalma listesi oluşturulmadı.".encode("utf-8"))
+                return
+
+            encoded_content = content.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-mpegurl; charset=utf-8")
+            self.send_header("Content-Disposition", 'attachment; filename="playlist.m3u"')
+            self.send_header("Content-Length", str(len(encoded_content)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            
+            if send_body:
+                self.wfile.write(encoded_content)
+            return
+
         if parsed_path.path != "/proxy":
             self.send_response(404)
             self.end_headers()
@@ -49,13 +83,17 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
 
         query = urllib.parse.parse_qs(parsed_path.query)
         target_url = query.get("url", [None])[0]
-        if not target_url:
+        
+        # 🛡️ GÜVENLİK FİXİ: SSRF ve LFI (Local File Inclusion) önleme
+        # Sadece http ve https protokollerine izin ver (örn. file:// engellenir)
+        if not target_url or not target_url.startswith(("http://", "https://")):
             self.send_response(400)
             self.end_headers()
             return
 
         try:
-            headers = {"User-Agent": "Mozilla/5.0"}
+            # 🌐 İYİLEŞTİRME: Config'den gelen tarayıcı User-Agent'ını kullan
+            headers = {"User-Agent": USER_AGENT}
             for h in ("Referer", "Range", "Accept"):
                 val = self.headers.get(h)
                 if val:
@@ -176,20 +214,20 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         return "\n".join(new_lines).encode("utf-8")
 
 
-def get_free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
-
-
 class LocalProxyServer:
     def __init__(self):
-        self.port = get_free_port()
         self.server = None
         self.thread = None
+        self.port = None
+        self.m3u_content = None  # Çalma listesi içeriğini bellekte tutar
 
     def start(self):
-        self.server = ThreadingTCPServer(("127.0.0.1", self.port), ProxyHandler)
+        # 🔄 AĞDAKİ DİĞER CİHAZLARIN ERİŞEBİLMESİ İÇİN:
+        # Sunucuyu "0.0.0.0" adresine bağlayarak, aynı Wi-Fi/Ağdaki Smart TV veya 
+        # telefonların da bu çalma listesine ve proxy'ye erişebilmesini sağlıyoruz.
+        self.server = ThreadingTCPServer(("0.0.0.0", 0), ProxyHandler)
+        self.server.proxy_instance = self
+        self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         logger.info(f"CORS Proxy on :{self.port}")
@@ -202,3 +240,7 @@ class LocalProxyServer:
 
     def get_proxy_url(self, target_url):
         return f"http://127.0.0.1:{self.port}/proxy?url={urllib.parse.quote(target_url, safe='')}"
+
+    def set_m3u_content(self, content: str):
+        """Çalma listesi içeriğini yerel proxy üzerinden sunmak için set eder."""
+        self.m3u_content = content

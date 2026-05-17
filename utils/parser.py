@@ -12,6 +12,12 @@ from typing import Iterable, List, Dict, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
+# Config'den tarayıcı User-Agent'ını çek, hata durumunda güvenli bir varsayılan kullan
+try:
+    from utils.config import USER_AGENT
+except ImportError:
+    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
 # Türk kanallar için regex pattern
 TR_PATTERN = re.compile(
     r"(\b|_|\[|\(|\|)(TR|TURK|TÜRK|TURKIYE|TÜRKİYE|YERLI|ULUSAL|ISTANBUL)(\b|_|\]|\)|\||:)",
@@ -109,7 +115,7 @@ def filter_channels(
         result = [ch for ch in result if ch.get("Grup", "") == group_filter]
     return result
 
-def _check_single_url(url: str, timeout: float = 3.0) -> str:
+def _check_single_url(url: str, timeout: float = 3.0, user_agent: Optional[str] = None) -> str:
     """
     Tek URL'yi mümkün olan en hızlı şekilde kontrol eder.
     
@@ -121,8 +127,12 @@ def _check_single_url(url: str, timeout: float = 3.0) -> str:
     if not url or not url.startswith(("http://", "https://")):
         return "❌ Geçersiz"
 
+    # 🌐 İYİLEŞTİRME: Tutarlı ve tarayıcı benzeri User-Agent kullanılarak engellemeler önlenir
+    if not user_agent:
+        user_agent = USER_AGENT
+
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; HealthCheck/1.0)",
+        "User-Agent": user_agent,
         "Connection": "close",      # Bağlantıyı hemen kapat
         "Accept": "*/*",
     }
@@ -198,6 +208,7 @@ def batch_check_health(
     urls: List[str],
     max_workers: int = 50,
     timeout: float = 3.0,
+    user_agent: Optional[str] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> List[str]:
     """
@@ -216,7 +227,7 @@ def batch_check_health(
     def check_with_index(args):
         nonlocal completed
         idx, url = args
-        result = _check_single_url(url, timeout=timeout)
+        result = _check_single_url(url, timeout=timeout, user_agent=user_agent)
         if progress_callback:
             try:
                 with progress_lock:

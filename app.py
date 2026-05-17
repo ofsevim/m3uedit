@@ -541,6 +541,29 @@ if not st.session_state.data.empty:
     with act2:
         if st.button("🔗 M3U Link Oluştur", use_container_width=True):
             with st.spinner("Link oluşturuluyor..."):
+                # 🆕 Yerel proxy sunucusuna M3U içeriğini kaydet
+                proxy_server = get_proxy_server()
+                proxy_server.set_m3u_content(m3u_out)
+                
+                # Yerel ağ IP adresini bul
+                import socket
+                def get_local_ip():
+                    try:
+                        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                            s.connect(("8.8.8.8", 80))
+                            ip = s.getsockname()[0]
+                            return ip
+                    except Exception:
+                        try:
+                            return socket.gethostbyname(socket.gethostname())
+                        except Exception:
+                            return "127.0.0.1"
+
+                local_ip = get_local_ip()
+                st.session_state.m3u_local_link = f"http://127.0.0.1:{proxy_server.port}/playlist.m3u"
+                st.session_state.m3u_network_link = f"http://{local_ip}:{proxy_server.port}/playlist.m3u"
+
+                # Dış bulut servisini de arka planda dene
                 link = network_utils.create_m3u_link(
                     m3u_out,
                     user_agent=USER_AGENT,
@@ -548,9 +571,10 @@ if not st.session_state.data.empty:
                 )
             if link:
                 st.session_state.m3u_link = link
-                st.success("Link hazır!")
+                st.success("✅ Linkler oluşturuldu!")
             else:
-                st.error("Link oluşturulamadı.")
+                st.session_state.m3u_link = None
+                st.warning("⚠️ Bulut linki (paste.rs/dpaste) oluşturulamadı, ancak Yerel Ağ linkleriniz hazır!")
     with act3:
         if st.button("🔍 Sağlık Kontrolü", use_container_width=True):
             max_health_channels = HEALTH_CHECK_MAX_CHANNELS if HEALTH_CHECK_MAX_CHANNELS > 0 else len(df_display)
@@ -577,6 +601,7 @@ if not st.session_state.data.empty:
                 urls, 
                 max_workers=HEALTH_CHECK_MAX_WORKERS,
                 timeout=HEALTH_CHECK_TIMEOUT,
+                user_agent=USER_AGENT,
                 progress_callback=update_progress
             )
 
@@ -600,10 +625,31 @@ if not st.session_state.data.empty:
             time.sleep(1.5)
             st.rerun()
 
-    if st.session_state.get("m3u_link"):
-        st.markdown("### Paylaşım Linki")
-        st.code(st.session_state.m3u_link, language=None)
-        st.caption("☝️ Bu linki IPTV oynatıcına yapıştırabilirsin.")
+    if st.session_state.get("m3u_local_link"):
+        st.markdown("### 🔗 M3U Çalma Listesi Linkleri")
+        
+        tab_local, tab_network, tab_external = st.tabs([
+            "💻 Bu Bilgisayar (Localhost)",
+            "📺 Aynı Ağdaki Diğer Cihazlar (Wi-Fi/TV)",
+            "🌐 Dış Paylaşım (Bulut)"
+        ])
+        
+        with tab_local:
+            st.info("Bu bilgisayardaki oynatıcılar (VLC, PotPlayer vb.) için:")
+            st.code(st.session_state.m3u_local_link, language=None)
+            
+        with tab_network:
+            st.info("Aynı Wi-Fi/Ağdaki Smart TV, Telefon veya Tablet için:")
+            st.code(st.session_state.m3u_network_link, language=None)
+            st.caption("⚠️ **Önemli:** TV veya diğer cihazlarınızın bu bilgisayarla **aynı modem/ağa** bağlı olduğundan emin olun.")
+            
+        with tab_external:
+            if st.session_state.get("m3u_link"):
+                st.success("İnternet üzerinden her yerden erişilebilir bulut linki:")
+                st.code(st.session_state.m3u_link, language=None)
+            else:
+                st.error("❌ Bulut linki oluşturulamadı (paste.rs/dpaste engellenmiş olabilir).")
+                st.caption("İnternet DNS engelleri nedeniyle bulut linki oluşturulamadı. Smart TV'niz veya diğer cihazlarınız için yukarıdaki 'Aynı Ağdaki Diğer Cihazlar' sekmesindeki yerel ağ linkini kullanabilirsiniz.")
 
     # --- Canlı Oynatıcı ---
     st.markdown("### 🎬 Canlı Oynatıcı")
