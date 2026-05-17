@@ -607,7 +607,7 @@ if not st.session_state.data.empty:
                 if not app_url:
                     app_url = "http://localhost:8501"
 
-                st.session_state.m3u_static_link = f"{app_url}/static/{playlist_filename}"
+                st.session_state.m3u_static_link = f"{app_url}/app/static/{playlist_filename}"
             st.success("✅ Linkler başarıyla oluşturuldu!")
     with act3:
         if st.button("🔍 Sağlık Kontrolü", use_container_width=True):
