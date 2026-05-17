@@ -541,9 +541,10 @@ if not st.session_state.data.empty:
     with act2:
         if st.button("🔗 M3U Link Oluştur", use_container_width=True):
             with st.spinner("Link oluşturuluyor..."):
-                # 🆕 Yerel proxy sunucusuna M3U içeriğini kaydet
+                # 🆕 Yerel proxy sunucusuna M3U içeriğini kaydet (Eski cache kalıntılarından ötürü hata almamak için korumalı çağrı yapıyoruz)
                 proxy_server = get_proxy_server()
-                proxy_server.set_m3u_content(m3u_out)
+                if hasattr(proxy_server, "set_m3u_content"):
+                    proxy_server.set_m3u_content(m3u_out)
                 
                 # Yerel ağ IP adresini bul
                 import socket
