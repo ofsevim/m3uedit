@@ -564,18 +564,51 @@ if not st.session_state.data.empty:
                 st.session_state.m3u_local_link = f"http://127.0.0.1:{proxy_server.port}/playlist.m3u"
                 st.session_state.m3u_network_link = f"http://{local_ip}:{proxy_server.port}/playlist.m3u"
 
-                # Dış bulut servisini de arka planda dene
-                link = network_utils.create_m3u_link(
-                    m3u_out,
-                    user_agent=USER_AGENT,
-                    disable_ssl_verify=DISABLE_SSL_VERIFY,
-                )
-            if link:
-                st.session_state.m3u_link = link
-                st.success("✅ Linkler oluşturuldu!")
-            else:
-                st.session_state.m3u_link = None
-                st.warning("⚠️ Bulut linki (paste.rs/dpaste) oluşturulamadı, ancak Yerel Ağ linkleriniz hazır!")
+                # 🆕 Streamlit üzerinden çalma listesi sunma (Statik servis)
+                import uuid
+                if "playlist_id" not in st.session_state:
+                    st.session_state.playlist_id = str(uuid.uuid4())[:8]
+                
+                static_dir = os.path.join(os.path.dirname(__file__), "static")
+                os.makedirs(static_dir, exist_ok=True)
+                playlist_filename = f"playlist_{st.session_state.playlist_id}.m3u"
+                playlist_path = os.path.join(static_dir, playlist_filename)
+                
+                with open(playlist_path, "w", encoding="utf-8") as f:
+                    f.write(m3u_out)
+                
+                # Dinamik olarak sunucu adresini bul
+                app_url = None
+                try:
+                    # Streamlit >= 1.34
+                    host = st.context.headers.get("host")
+                    proto = st.context.headers.get("x-forwarded-proto", "http")
+                    if proto and "," in proto:
+                        proto = proto.split(",")[0].strip()
+                    if host:
+                        app_url = f"{proto}://{host}"
+                except Exception:
+                    pass
+
+                if not app_url:
+                    try:
+                        from streamlit.web.server.websocket_headers import _get_websocket_headers
+                        headers = _get_websocket_headers()
+                        if headers:
+                            host = headers.get("host")
+                            proto = headers.get("x-forwarded-proto", "http")
+                            if proto and "," in proto:
+                                proto = proto.split(",")[0].strip()
+                            if host:
+                                app_url = f"{proto}://{host}"
+                    except Exception:
+                        pass
+                
+                if not app_url:
+                    app_url = "http://localhost:8501"
+
+                st.session_state.m3u_static_link = f"{app_url}/static/{playlist_filename}"
+            st.success("✅ Linkler başarıyla oluşturuldu!")
     with act3:
         if st.button("🔍 Sağlık Kontrolü", use_container_width=True):
             max_health_channels = HEALTH_CHECK_MAX_CHANNELS if HEALTH_CHECK_MAX_CHANNELS > 0 else len(df_display)
@@ -626,31 +659,28 @@ if not st.session_state.data.empty:
             time.sleep(1.5)
             st.rerun()
 
-    if st.session_state.get("m3u_local_link"):
+    if st.session_state.get("m3u_static_link"):
         st.markdown("### 🔗 M3U Çalma Listesi Linkleri")
         
-        tab_local, tab_network, tab_external = st.tabs([
-            "💻 Bu Bilgisayar (Localhost)",
-            "📺 Aynı Ağdaki Diğer Cihazlar (Wi-Fi/TV)",
-            "🌐 Dış Paylaşım (Bulut)"
+        tab_cloud, tab_network, tab_local = st.tabs([
+            "🌐 Bulut Paylaşımı (Streamlit Sunucusu)",
+            "📺 Aynı Ağdaki Diğer Cihazlar (Wi-Fi/Smart TV)",
+            "💻 Bu Bilgisayar (CORS Proxy)"
         ])
         
-        with tab_local:
-            st.info("Bu bilgisayardaki oynatıcılar (VLC, PotPlayer vb.) için:")
-            st.code(st.session_state.m3u_local_link, language=None)
+        with tab_cloud:
+            st.success("İnternet üzerinden (Smart TV, IPTV oynatıcı vb.) erişilebilecek güvenli ve kesintisiz bağlantı:")
+            st.code(st.session_state.m3u_static_link, language=None)
+            st.caption("☝️ **Not:** Bu link doğrudan bu Streamlit uygulamasından sunulduğu için **engellenemez** ve en hızlı çözümdür.")
             
         with tab_network:
-            st.info("Aynı Wi-Fi/Ağdaki Smart TV, Telefon veya Tablet için:")
+            st.info("Aynı Wi-Fi/Ağdaki Smart TV veya Mobil Cihazlar için yerel ağ bağlantısı:")
             st.code(st.session_state.m3u_network_link, language=None)
             st.caption("⚠️ **Önemli:** TV veya diğer cihazlarınızın bu bilgisayarla **aynı modem/ağa** bağlı olduğundan emin olun.")
             
-        with tab_external:
-            if st.session_state.get("m3u_link"):
-                st.success("İnternet üzerinden her yerden erişilebilir bulut linki:")
-                st.code(st.session_state.m3u_link, language=None)
-            else:
-                st.error("❌ Bulut linki oluşturulamadı (paste.rs/dpaste engellenmiş olabilir).")
-                st.caption("İnternet DNS engelleri nedeniyle bulut linki oluşturulamadı. Smart TV'niz veya diğer cihazlarınız için yukarıdaki 'Aynı Ağdaki Diğer Cihazlar' sekmesindeki yerel ağ linkini kullanabilirsiniz.")
+        with tab_local:
+            st.info("Bu bilgisayardaki oynatıcılar (VLC, PotPlayer vb.) için CORS destekli yerel bağlantı:")
+            st.code(st.session_state.m3u_local_link, language=None)
 
     # --- Canlı Oynatıcı ---
     st.markdown("### 🎬 Canlı Oynatıcı")
