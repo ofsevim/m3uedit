@@ -38,6 +38,19 @@ def create_m3u_link(
     timeout: int = 15,
 ) -> str:
     """Upload filtered M3U content to a paste service and return a raw URL."""
+    # 🚀 1. Termbin.com (Çok hızlı, sade metin ve Türkiye'de DNS engelsiz)
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            s.connect(("termbin.com", 9999))
+            s.sendall(m3u_content.encode("utf-8"))
+            paste_url = s.recv(1024).decode("utf-8").strip()
+            if paste_url.startswith("http"):
+                return paste_url
+    except Exception:
+        pass
+
     context = create_ssl_context(disable_ssl_verify)
 
     try:

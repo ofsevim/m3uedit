@@ -564,50 +564,12 @@ if not st.session_state.data.empty:
                 st.session_state.m3u_local_link = f"http://127.0.0.1:{proxy_server.port}/playlist.m3u"
                 st.session_state.m3u_network_link = f"http://{local_ip}:{proxy_server.port}/playlist.m3u"
 
-                # 🆕 Streamlit üzerinden çalma listesi sunma (Statik servis)
-                import uuid
-                if "playlist_id" not in st.session_state:
-                    st.session_state.playlist_id = str(uuid.uuid4())[:8]
-                
-                static_dir = os.path.join(os.path.dirname(__file__), "static")
-                os.makedirs(static_dir, exist_ok=True)
-                playlist_filename = f"playlist_{st.session_state.playlist_id}.m3u"
-                playlist_path = os.path.join(static_dir, playlist_filename)
-                
-                with open(playlist_path, "w", encoding="utf-8") as f:
-                    f.write(m3u_out)
-                
-                # Dinamik olarak sunucu adresini bul
-                app_url = None
-                try:
-                    # Streamlit >= 1.34
-                    host = st.context.headers.get("host")
-                    proto = st.context.headers.get("x-forwarded-proto", "http")
-                    if proto and "," in proto:
-                        proto = proto.split(",")[0].strip()
-                    if host:
-                        app_url = f"{proto}://{host}"
-                except Exception:
-                    pass
-
-                if not app_url:
-                    try:
-                        from streamlit.web.server.websocket_headers import _get_websocket_headers
-                        headers = _get_websocket_headers()
-                        if headers:
-                            host = headers.get("host")
-                            proto = headers.get("x-forwarded-proto", "http")
-                            if proto and "," in proto:
-                                proto = proto.split(",")[0].strip()
-                            if host:
-                                app_url = f"{proto}://{host}"
-                    except Exception:
-                        pass
-                
-                if not app_url:
-                    app_url = "http://localhost:8501"
-
-                st.session_state.m3u_static_link = f"{app_url}/app/static/{playlist_filename}"
+                # 🆕 Bulut/Dış Cihazlar için link oluştur (Engelsiz termbin.com altyapısı ile)
+                st.session_state.m3u_cloud_link = network_utils.create_m3u_link(
+                    m3u_out,
+                    user_agent=USER_AGENT,
+                    disable_ssl_verify=DISABLE_SSL_VERIFY,
+                )
             st.success("✅ Linkler başarıyla oluşturuldu!")
     with act3:
         if st.button("🔍 Sağlık Kontrolü", use_container_width=True):
@@ -659,22 +621,26 @@ if not st.session_state.data.empty:
             time.sleep(1.5)
             st.rerun()
 
-    if st.session_state.get("m3u_static_link"):
+    if st.session_state.get("m3u_local_link"):
         st.markdown("### 🔗 M3U Çalma Listesi Linkleri")
         
         tab_cloud, tab_network, tab_local = st.tabs([
-            "🌐 Bulut Paylaşımı (Streamlit Sunucusu)",
+            "🌐 Bulut Paylaşımı (Dış Cihazlar / Her Yerden)",
             "📺 Aynı Ağdaki Diğer Cihazlar (Wi-Fi/Smart TV)",
             "💻 Bu Bilgisayar (CORS Proxy)"
         ])
         
         with tab_cloud:
-            st.success("İnternet üzerinden (Smart TV, IPTV oynatıcı vb.) erişilebilecek güvenli ve kesintisiz bağlantı:")
-            st.code(st.session_state.m3u_static_link, language=None)
-            st.caption("☝️ **Not:** Bu link doğrudan bu Streamlit uygulamasından sunulduğu için **engellenemez** ve en hızlı çözümdür.")
+            if st.session_state.get("m3u_cloud_link"):
+                st.success("İnternet üzerinden (Smart TV, IPTV oynatıcı, mobil veya dış ağlar vb.) erişilebilecek güvenli bağlantı:")
+                st.code(st.session_state.m3u_cloud_link, language=None)
+                st.caption("☝️ **Not:** Bu link Türkiye'de engelsiz olan termbin.com üzerinden sunulmaktadır ve doğrudan M3U çalma listenizi barındırır.")
+            else:
+                st.error("❌ Bulut linki oluşturulamadı.")
+                st.caption("Lütfen internet bağlantınızı kontrol edin. İnternet olmadan da 'Aynı Ağdaki Diğer Cihazlar' sekmesinden yerel bağlantınızı kullanabilirsiniz.")
             
         with tab_network:
-            st.info("Aynı Wi-Fi/Ağdaki Smart TV veya Mobil Cihazlar için yerel ağ bağlantısı:")
+            st.success("Aynı Wi-Fi/Ağdaki Smart TV veya Mobil Cihazlar için yerel ağ bağlantısı:")
             st.code(st.session_state.m3u_network_link, language=None)
             st.caption("⚠️ **Önemli:** TV veya diğer cihazlarınızın bu bilgisayarla **aynı modem/ağa** bağlı olduğundan emin olun.")
             
