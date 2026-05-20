@@ -51,12 +51,13 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         
         # ── 🆕 YEREL ROTA: /playlist.m3u veya /playlist ──
         # Bu rota, kullanıcının oluşturduğu M3U çalma listesini yerel proxy üzerinden sunar.
-        # İnternet bağlantısına veya pastebin sitelerine ihtiyaç duyulmadan çalışır!
+        # Bellek sızıntılarını önlemek için bu veriyi diskteki geçici bir dosyadan stream ederiz.
         if parsed_path.path in ("/playlist.m3u", "/playlist"):
+            import os
             proxy_instance = getattr(self.server, "proxy_instance", None)
-            content = getattr(proxy_instance, "m3u_content", None) if proxy_instance else None
+            file_path = getattr(proxy_instance, "playlist_file", None) if proxy_instance else None
             
-            if not content:
+            if not file_path or not os.path.exists(file_path):
                 self.send_response(404)
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
@@ -64,16 +65,26 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
                     self.wfile.write("Henüz bir çalma listesi oluşturulmadı.".encode("utf-8"))
                 return
 
-            encoded_content = content.encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/x-mpegurl; charset=utf-8")
-            self.send_header("Content-Disposition", 'attachment; filename="playlist.m3u"')
-            self.send_header("Content-Length", str(len(encoded_content)))
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            
-            if send_body:
-                self.wfile.write(encoded_content)
+            try:
+                file_size = os.path.getsize(file_path)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/x-mpegurl; charset=utf-8")
+                self.send_header("Content-Disposition", 'attachment; filename="playlist.m3u"')
+                self.send_header("Content-Length", str(file_size))
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                
+                if send_body:
+                    with open(file_path, "rb") as f:
+                        while True:
+                            chunk = f.read(64 * 1024)
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+            except OSError as e:
+                logger.error(f"Error serving playlist file: {e}")
+                self.send_response(500)
+                self.end_headers()
             return
 
         if parsed_path.path != "/proxy":
@@ -219,7 +230,12 @@ class LocalProxyServer:
         self.server = None
         self.thread = None
         self.port = None
-        self.m3u_content = None  # Çalma listesi içeriğini bellekte tutar
+        
+        # Streamlit Cloud'da RAM şişmesini önlemek için çalma listesini diskteki geçici bir dosyada saklarız.
+        # Bu sayede devasa çalma listeleri Python heap belleğinde tutulmaz.
+        import os
+        from utils.visitor_counter import VisitorCounter
+        self.playlist_file = VisitorCounter._resolve_path("temp_playlist.m3u")
 
     def start(self):
         # 🔄 AĞDAKİ DİĞER CİHAZLARIN ERİŞEBİLMESİ İÇİN:
@@ -237,10 +253,21 @@ class LocalProxyServer:
         if self.server:
             self.server.shutdown()
             self.server.server_close()
+            # Geçici dosyayı temizle
+            import os
+            try:
+                if os.path.exists(self.playlist_file):
+                    os.remove(self.playlist_file)
+            except OSError:
+                pass
 
     def get_proxy_url(self, target_url):
         return f"http://127.0.0.1:{self.port}/proxy?url={urllib.parse.quote(target_url, safe='')}"
 
     def set_m3u_content(self, content: str):
-        """Çalma listesi içeriğini yerel proxy üzerinden sunmak için set eder."""
-        self.m3u_content = content
+        """Çalma listesi içeriğini RAM yerine geçici bir dosyaya yazar."""
+        try:
+            with open(self.playlist_file, "w", encoding="utf-8", newline="") as f:
+                f.write(content)
+        except OSError as e:
+            logger.error(f"Failed to write playlist to file: {e}")

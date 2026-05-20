@@ -400,6 +400,11 @@ with st.sidebar:
     only_tr = st.checkbox("🇹🇷 Sadece TR Kanalları", value=DEFAULT_TR_FILTER)
 
     if st.button("🚀 Listeyi Çek ve Tara", use_container_width=True, type="primary"):
+        # Belleği hemen boşaltmak için eski verileri temizle
+        st.session_state.data = pd.DataFrame()
+        import gc
+        gc.collect()
+
         source_lines = None
         start = time.time()
         if url:
@@ -427,13 +432,22 @@ with st.sidebar:
 
         if source_lines:
             raw = parse_m3u_lines(source_lines)
+            source_lines = None
+            gc.collect()
+
             filtered = filter_channels(raw, only_tr)
+            raw = None
+            gc.collect()
+
             elapsed = round(time.time() - start, 2)
             if filtered:
                 df = _ensure_channel_columns(pd.DataFrame(filtered))
+                filtered = None
+                gc.collect()
+
                 st.session_state.data = df
                 st.session_state.play_channel = None  # ✅ Yeni liste yüklendiğinde eski oynatmayı sıfırla
-                st.success(f"✅ {len(filtered)} kanal bulundu ({elapsed}s)")
+                st.success(f"✅ {len(df)} kanal bulundu ({elapsed}s)")
             else:
                 st.warning("⚠️ Kanal bulunamadı.")
 
@@ -751,16 +765,12 @@ if not st.session_state.data.empty:
     st.markdown("### Kanal Tablosu")
     display_cols = [c for c in ["Durum", "Grup", "Kanal Adı", "URL", "Tür"] if c in df_display.columns]
     table_df = df_display[display_cols] if display_cols else df_display
-    styled_df = table_df.style
-    if "Durum" in table_df.columns:
-        styled_df = styled_df.map(_status_style, subset=["Durum"])
-    if "Kanal Adı" in table_df.columns:
-        styled_df = styled_df.set_properties(subset=["Kanal Adı"], **{"font-weight": "700", "color": "#f8fafc"})
-    if "Grup" in table_df.columns:
-        styled_df = styled_df.set_properties(subset=["Grup"], **{"color": "#cbd5e1"})
 
+    # Pandas Styler (.style) binlerce satırda devasa RAM tüketir ve Streamlit'in
+    # 1 GB olan kaynak sınırını aşarak uygulamanın çökmesine (OOM) neden olur.
+    # Bu yüzden doğrudan raw DataFrame'i veriyoruz; hem çok daha hızlı hem de sıfır ekstra bellek.
     st.dataframe(
-        styled_df,
+        table_df,
         use_container_width=True,
         hide_index=True,
         height=TABLE_HEIGHT,
