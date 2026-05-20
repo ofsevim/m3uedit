@@ -7,13 +7,16 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+_global_vc_lock = threading.Lock()
+
+
 class VisitorCounter:
     """Ziyaretçi sayacı - JSON dosyası ile ziyaretçi sayısını takip eder."""
 
     def __init__(self, counter_file="visitor_data.json"):
         # Streamlit Cloud uyumluluğu: yazılabilir dizin bul
         self.counter_file = self._resolve_path(counter_file)
-        self.lock = threading.Lock()
+        self.lock = _global_vc_lock
         self._ensure_file_exists()
 
     @staticmethod

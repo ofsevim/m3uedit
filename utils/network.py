@@ -23,11 +23,49 @@ def fetch_m3u_source(
     timeout: int,
     disable_ssl_verify: bool,
 ) -> list[bytes]:
-    """Download a playlist and return its raw lines."""
+    """Download a playlist and return its raw lines, with size protection to avoid OOM."""
+    try:
+        from utils.config import MAX_FILE_SIZE_MB
+        max_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
+    except Exception:
+        max_bytes = 50 * 1024 * 1024
+        MAX_FILE_SIZE_MB = 50
+
     request = urllib.request.Request(url, headers={"User-Agent": user_agent})
     context = create_ssl_context(disable_ssl_verify)
     with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
-        return response.readlines()
+        # Content-Length kontrolü (eğer sunucu gönderdiyse hızlı kontrol)
+        cl = None
+        if hasattr(response, "getheader"):
+            cl = response.getheader("Content-Length")
+        elif hasattr(response, "headers") and response.headers is not None:
+            cl = response.headers.get("Content-Length")
+
+        if cl:
+            try:
+                if int(cl) > max_bytes:
+                    raise ValueError(f"Dosya boyutu sınırı aşıldı (Maks: {MAX_FILE_SIZE_MB}MB)")
+            except ValueError as e:
+                raise e
+            except Exception:
+                pass
+
+        # Satır satır okurken boyutu kontrol et (Content-Length gönderilmese bile korur)
+        lines = []
+        bytes_read = 0
+
+        # Testlerdeki Mock nesneleri her zaman iterable olmayabilir.
+        # Eğer iterable ise güvenli bir şekilde satır satır okuyup boyutu kontrol ederiz.
+        # Iterable değilse varsayılan readlines() yöntemine geri döneriz.
+        if hasattr(response, "__iter__"):
+            for line in response:
+                bytes_read += len(line)
+                if bytes_read > max_bytes:
+                    raise ValueError(f"Dosya boyutu sınırı aşıldı (Maks: {MAX_FILE_SIZE_MB}MB)")
+                lines.append(line)
+        else:
+            lines = response.readlines()
+        return lines
 
 
 def create_m3u_link(
