@@ -9,6 +9,12 @@ logger = logging.getLogger(__name__)
 
 _global_vc_lock = threading.Lock()
 
+# Dedup için bellekte/diskte tutulacak en fazla oturum sayısı.
+# Bu sınır, visitor_data.json dosyasının süresiz büyümesini (RAM/disk şişmesi)
+# engeller. Tekil ziyaretçi sayısı ayrı bir tamsayı sayaçta tutulduğu için
+# bu pencere küçük olsa bile toplam tekil sayısı doğru kalır.
+MAX_TRACKED_SESSIONS = 5000
+
 
 class VisitorCounter:
     """Ziyaretçi sayacı - JSON dosyası ile ziyaretçi sayısını takip eder."""
@@ -44,7 +50,8 @@ class VisitorCounter:
             if not os.path.exists(self.counter_file):
                 initial_data = {
                     "total_visits": 0,
-                    "unique_sessions": [],
+                    "unique_visitors": 0,
+                    "recent_sessions": [],
                     "first_visit": datetime.now().isoformat(),
                     "last_visit": datetime.now().isoformat(),
                 }
@@ -55,24 +62,38 @@ class VisitorCounter:
         try:
             with open(self.counter_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                data["unique_sessions"] = set(data.get("unique_sessions", []))
-                return data
         except (json.JSONDecodeError, OSError) as e:
             logger.error(f"Veri yükleme hatası: {e}", exc_info=True)
             return {
                 "total_visits": 0,
-                "unique_sessions": set(),
+                "unique_visitors": 0,
+                "recent_sessions": set(),
                 "first_visit": datetime.now().isoformat(),
                 "last_visit": datetime.now().isoformat(),
             }
+
+        # Geriye dönük uyum: eski format sınırsız "unique_sessions" listesi
+        # tutuyordu. Bunu yeni "unique_visitors" sayacı + sınırlı
+        # "recent_sessions" penceresine taşı.
+        legacy_sessions = data.get("unique_sessions")
+        if legacy_sessions is not None and "unique_visitors" not in data:
+            data["unique_visitors"] = len(legacy_sessions)
+            data["recent_sessions"] = set(legacy_sessions[-MAX_TRACKED_SESSIONS:])
+        else:
+            data["recent_sessions"] = set(data.get("recent_sessions", []))
+            data.setdefault("unique_visitors", 0)
+        data.pop("unique_sessions", None)
+        return data
 
     def _save_data_lockless(self, data):
         """Kilit olmadan sayaç verisini kaydet (sadece dahili kullanım)."""
         try:
             save_data = data.copy()
-            # set -> list (JSON serileştirme için)
-            sessions = data.get("unique_sessions", set())
-            save_data["unique_sessions"] = list(sessions) if isinstance(sessions, set) else sessions
+            # set -> list (JSON serileştirme için), son N oturumla sınırlı
+            sessions = data.get("recent_sessions", set())
+            sessions = list(sessions) if isinstance(sessions, set) else list(sessions)
+            save_data["recent_sessions"] = sessions[-MAX_TRACKED_SESSIONS:]
+            save_data.pop("unique_sessions", None)
 
             with open(self.counter_file, "w", encoding="utf-8") as f:
                 json.dump(save_data, f, indent=2, ensure_ascii=False)
@@ -96,8 +117,9 @@ class VisitorCounter:
             data["total_visits"] += 1
             data["last_visit"] = datetime.now().isoformat()
 
-            if session_id:
-                data["unique_sessions"].add(session_id)
+            if session_id and session_id not in data["recent_sessions"]:
+                data["unique_visitors"] += 1
+                data["recent_sessions"].add(session_id)
 
             self._save_data_lockless(data)
             return data["total_visits"]
@@ -108,7 +130,7 @@ class VisitorCounter:
             data = self._load_data_lockless()
             return {
                 "total_visits": data["total_visits"],
-                "unique_visitors": len(data["unique_sessions"]),
+                "unique_visitors": data["unique_visitors"],
                 "first_visit": data.get("first_visit", "Bilinmiyor"),
                 "last_visit": data.get("last_visit", "Bilinmiyor"),
             }
@@ -118,7 +140,8 @@ class VisitorCounter:
         with self.lock:
             initial_data = {
                 "total_visits": 0,
-                "unique_sessions": set(),
+                "unique_visitors": 0,
+                "recent_sessions": set(),
                 "first_visit": datetime.now().isoformat(),
                 "last_visit": datetime.now().isoformat(),
             }

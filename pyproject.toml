@@ -24,8 +24,8 @@ classifiers = [
 ]
 
 dependencies = [
-    "streamlit>=1.31.0",
-    "pandas>=2.0.0",
+    "streamlit>=1.31.0,<2.0.0",
+    "pandas>=2.0.0,<3.0.0",
 ]
 
 [project.optional-dependencies]

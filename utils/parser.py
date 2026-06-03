@@ -260,19 +260,35 @@ def batch_check_health(
 
     return results
 
+def _clean_m3u_field(value: object, *, is_attr: bool = False) -> str:
+    """M3U satırını bozabilecek karakterleri temizler.
+
+    Satır sonları (CR/LF) bir kanalın iki satıra bölünmesine; attribute
+    değerlerindeki çift tırnak ise ``group-title="..."`` gibi alanların
+    kırılmasına yol açar. Bu karakterleri güvenli karşılıklarıyla değiştiririz.
+    """
+    text = str(value).replace("\r", " ").replace("\n", " ").strip()
+    if is_attr:
+        text = text.replace('"', "'")
+    return text
+
+
 def convert_df_to_m3u(df: pd.DataFrame) -> str:
     """Pandas DataFrame'i M3U formatına dönüştürür.
-    
+
     Args:
         df: Kanal bilgilerini içeren DataFrame
-        
+
     Returns:
         M3U formatında string
     """
     lines: List[str] = ["#EXTM3U"]
     for _, row in df.iterrows():
-        logo = row.get("LogoURL", "")
+        logo = _clean_m3u_field(row.get("LogoURL", ""), is_attr=True)
+        group = _clean_m3u_field(row.get("Grup", "Genel"), is_attr=True)
+        name = _clean_m3u_field(row.get("Kanal Adı", ""))
+        url = _clean_m3u_field(row.get("URL", ""))
         logo_attr = f' tvg-logo="{logo}"' if logo else ""
-        lines.append(f'#EXTINF:-1{logo_attr} group-title="{row["Grup"]}",{row["Kanal Adı"]}')
-        lines.append(str(row["URL"]))
+        lines.append(f'#EXTINF:-1{logo_attr} group-title="{group}",{name}')
+        lines.append(url)
     return "\n".join(lines) + "\n"

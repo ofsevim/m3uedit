@@ -1,10 +1,10 @@
 # M3U Editör Pro - Gereksinimler
 
 # Web Framework
-streamlit>=1.31.0
+streamlit>=1.31.0,<2.0.0
 
 # Veri İşleme
-pandas>=2.0.0
+pandas>=2.0.0,<3.0.0
 
 # HTTP İstekleri (Python built-in urllib kullanılıyor)
 # requests - opsiyonel, urllib yeterli

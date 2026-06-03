@@ -124,7 +124,14 @@ def _status_style(value: str) -> str:
 
 
 def render_live_player(stream_url: str, height: int = 420) -> str:
-    url = (stream_url or "").replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+    url = (
+        (stream_url or "")
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace('"', '\\"')
+        .replace("\r", "")
+        .replace("\n", "")
+    )
     h = str(height)
 
     # Yerel proxy base URL

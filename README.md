@@ -9,7 +9,8 @@ IPTV M3U playlist dosyalarını kolayca yönetmek, düzenlemek ve filtrelemek i�
 
 > 💡 **Hızlı Başlangıç:** Windows'ta `run.bat`, Linux/Mac'te `./run.sh` çalıştırın!
 
-![M3U Editor Pro](https://via.placeholder.com/800x400?text=M3U+Editor+Pro+Screenshot)
+<!-- Ekran görüntüsü: docs/ klasörüne bir görsel ekleyip aşağıdaki satırı etkinleştirin. -->
+<!-- ![M3U Editor Pro](docs/screenshot.png) -->
 
 ## ✨ Özellikler
 
