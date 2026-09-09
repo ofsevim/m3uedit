@@ -150,3 +150,44 @@ def test_batch_check_health_progress_is_consistent():
     assert results == [mock_status, mock_status, mock_status]
     assert sorted(call[0] for call in progress_calls) == [1, 2, 3]
     assert all(call[1] == 3 for call in progress_calls)
+
+
+def test_convert_df_to_proxied_m3u():
+    df = pd.DataFrame(
+        [
+            {"Grup": "Spor", "Kanal Adı": "Canlı Maç", "URL": "http://stream.com/live.m3u8", "LogoURL": ""},
+        ]
+    )
+    proxied_m3u = parser_utils.convert_df_to_proxied_m3u(df, "http://192.168.1.50:8888/proxy")
+    assert proxied_m3u.startswith("#EXTM3U")
+    assert "http://192.168.1.50:8888/proxy?url=http%3A%2F%2Fstream.com%2Flive.m3u8" in proxied_m3u
+
+
+def test_convert_df_to_csv_json_txt():
+    df = pd.DataFrame(
+        [
+            {"Grup": "Haber", "Kanal Adı": "Haber TV", "URL": "http://haber.com/stream.m3u8", "Tür": "HLS", "Durum": "✅ Aktif", "LogoURL": ""},
+        ]
+    )
+    csv_out = parser_utils.convert_df_to_csv(df)
+    assert "Haber TV" in csv_out
+    assert "http://haber.com/stream.m3u8" in csv_out
+
+    json_out = parser_utils.convert_df_to_json(df)
+    import json
+    data = json.loads(json_out)
+    assert len(data) == 1
+    assert data[0]["Kanal Adı"] == "Haber TV"
+    assert data[0]["URL"] == "http://haber.com/stream.m3u8"
+
+    txt_out = parser_utils.convert_df_to_txt(df)
+    assert txt_out.strip() == "http://haber.com/stream.m3u8"
+
+
+def test_check_single_url_geo_blocked_vpn_detection():
+    import urllib.error
+    err_403 = urllib.error.HTTPError("http://geoblocked.com", 403, "Forbidden", {}, None)
+    with patch("urllib.request.urlopen", side_effect=err_403):
+        res = parser_utils._check_single_url("http://geoblocked.com")
+        assert res == "🌍 VPN Gerekebilir"
+

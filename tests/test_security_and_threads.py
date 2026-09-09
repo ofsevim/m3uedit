@@ -116,6 +116,30 @@ def test_proxy_server_local_playlist():
             content = resp.read().decode("utf-8")
             assert content == sample_m3u
 
+        # 3. Proxied playlist rotasını doğrula
+        proxied_playlist_url = f"http://127.0.0.1:{port}/proxied_playlist.m3u"
+        sample_proxied_m3u = "#EXTM3U\n#EXTINF:-1,Test Kanal\nhttp://127.0.0.1:8888/proxy?url=http://example.com/test.ts"
+        proxy.set_m3u_content(sample_m3u, proxied_content=sample_proxied_m3u)
+
+        with urllib.request.urlopen(proxied_playlist_url, timeout=3) as resp:
+            assert resp.status == 200
+            content = resp.read().decode("utf-8")
+            assert content == sample_proxied_m3u
+
     finally:
         proxy.stop()
+
+
+def test_proxy_server_config_and_headers():
+    """Proxy yapılandırmasının ve özel başlıkların doğruluğunu test eder."""
+    proxy = LocalProxyServer()
+    proxy.set_proxy_config(
+        upstream_proxy="http://127.0.0.1:9999",
+        custom_user_agent="TiviMate/4.7.0",
+        custom_referer="https://custom-referer.com"
+    )
+    assert proxy.upstream_proxy == "http://127.0.0.1:9999"
+    assert proxy.custom_user_agent == "TiviMate/4.7.0"
+    assert proxy.custom_referer == "https://custom-referer.com"
+
 

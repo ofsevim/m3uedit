@@ -49,13 +49,14 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
     def _handle_request(self, send_body=True):
         parsed_path = urllib.parse.urlparse(self.path)
         
-        # ── 🆕 YEREL ROTA: /playlist.m3u veya /playlist ──
-        # Bu rota, kullanıcının oluşturduğu M3U çalma listesini yerel proxy üzerinden sunar.
-        # Bellek sızıntılarını önlemek için bu veriyi diskteki geçici bir dosyadan stream ederiz.
-        if parsed_path.path in ("/playlist.m3u", "/playlist"):
+        # ── 🆕 YEREL ROTA: /playlist.m3u, /playlist veya /proxied_playlist.m3u ──
+        # Bu rota, kullanıcının oluşturduğu M3U veya VPN Köprüsü M3U listesini yerel proxy üzerinden sunar.
+        if parsed_path.path in ("/playlist.m3u", "/playlist", "/proxied_playlist.m3u"):
             import os
             proxy_instance = getattr(self.server, "proxy_instance", None)
-            file_path = getattr(proxy_instance, "playlist_file", None) if proxy_instance else None
+            target_attr = "proxied_playlist_file" if "proxied" in parsed_path.path else "playlist_file"
+            file_path = getattr(proxy_instance, target_attr, None) if proxy_instance else None
+            out_filename = "proxied_playlist.m3u" if "proxied" in parsed_path.path else "playlist.m3u"
             
             if not file_path or not os.path.exists(file_path):
                 self.send_response(404)
@@ -69,7 +70,7 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
                 file_size = os.path.getsize(file_path)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/x-mpegurl; charset=utf-8")
-                self.send_header("Content-Disposition", 'attachment; filename="playlist.m3u"')
+                self.send_header("Content-Disposition", f'attachment; filename="{out_filename}"')
                 self.send_header("Content-Length", str(file_size))
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
@@ -103,18 +104,34 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             return
 
         try:
-            # 🌐 İYİLEŞTİRME: Config'den gelen tarayıcı User-Agent'ını kullan
-            headers = {"User-Agent": USER_AGENT}
+            # 🌐 İYİLEŞTİRME: Config veya dinamik proxy yapılandırmasından gelen parametreleri kullan
+            proxy_instance = getattr(self.server, "proxy_instance", None)
+            ua = getattr(proxy_instance, "custom_user_agent", None) or USER_AGENT
+            custom_ref = getattr(proxy_instance, "custom_referer", None)
+            upstream = getattr(proxy_instance, "upstream_proxy", None)
+
+            headers = {"User-Agent": ua}
             for h in ("Referer", "Range", "Accept"):
                 val = self.headers.get(h)
                 if val:
                     headers[h] = val
+            if custom_ref and "Referer" not in headers:
+                headers["Referer"] = custom_ref
 
             req = urllib.request.Request(target_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=15, context=proxy_ssl_ctx) as resp:
+
+            def _open():
+                if upstream:
+                    p_handler = urllib.request.ProxyHandler({"http": upstream, "https": upstream})
+                    s_handler = urllib.request.HTTPSHandler(context=proxy_ssl_ctx)
+                    return urllib.request.build_opener(p_handler, s_handler).open(req, timeout=15)
+                return urllib.request.urlopen(req, timeout=15, context=proxy_ssl_ctx)
+
+            with _open() as resp:
                 content_type = resp.getheader("Content-Type", "application/octet-stream")
                 status_code = resp.status
                 final_url = resp.url
+
 
                 is_m3u8 = (
                     "mpegurl" in content_type.lower()
@@ -191,8 +208,15 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
     _uri_re = re.compile(r'(URI\s*=\s*")([^"]+)(")', re.IGNORECASE)
 
     def _make_proxy_url(self, url):
-        host, port = self.server.server_address
-        return f"http://{host}:{port}/proxy?url={urllib.parse.quote(url, safe='')}"
+        req_host = self.headers.get("Host") if hasattr(self, "headers") else None
+        if req_host:
+            authority = req_host
+        else:
+            host, port = self.server.server_address
+            if host in ("0.0.0.0", ""):
+                host = "127.0.0.1"
+            authority = f"{host}:{port}"
+        return f"http://{authority}/proxy?url={urllib.parse.quote(url, safe='')}"
 
     def _resolve_url(self, base_url, url):
         if url.startswith(("http://", "https://")):
@@ -230,12 +254,27 @@ class LocalProxyServer:
         self.server = None
         self.thread = None
         self.port = None
+        self.upstream_proxy = None
+        self.custom_user_agent = None
+        self.custom_referer = None
         
         # Streamlit Cloud'da RAM şişmesini önlemek için çalma listesini diskteki geçici bir dosyada saklarız.
         # Bu sayede devasa çalma listeleri Python heap belleğinde tutulmaz.
         import os
         from utils.visitor_counter import VisitorCounter
         self.playlist_file = VisitorCounter._resolve_path("temp_playlist.m3u")
+        self.proxied_playlist_file = VisitorCounter._resolve_path("temp_proxied_playlist.m3u")
+
+    def set_proxy_config(
+        self,
+        upstream_proxy: str | None = None,
+        custom_user_agent: str | None = None,
+        custom_referer: str | None = None,
+    ):
+        """Upstream proxy, User-Agent ve Referer ayarlarını günceller."""
+        self.upstream_proxy = upstream_proxy.strip() if upstream_proxy and upstream_proxy.strip() else None
+        self.custom_user_agent = custom_user_agent.strip() if custom_user_agent and custom_user_agent.strip() else None
+        self.custom_referer = custom_referer.strip() if custom_referer and custom_referer.strip() else None
 
     def start(self):
         # 🔄 AĞDAKİ DİĞER CİHAZLARIN ERİŞEBİLMESİ İÇİN:
@@ -253,21 +292,29 @@ class LocalProxyServer:
         if self.server:
             self.server.shutdown()
             self.server.server_close()
-            # Geçici dosyayı temizle
+            # Geçici dosyaları temizle
             import os
-            try:
-                if os.path.exists(self.playlist_file):
-                    os.remove(self.playlist_file)
-            except OSError:
-                pass
+            for p in (self.playlist_file, getattr(self, "proxied_playlist_file", None)):
+                if p:
+                    try:
+                        if os.path.exists(p):
+                            os.remove(p)
+                    except OSError:
+                        pass
 
-    def get_proxy_url(self, target_url):
-        return f"http://127.0.0.1:{self.port}/proxy?url={urllib.parse.quote(target_url, safe='')}"
+    def get_proxy_url(self, target_url, host: str = "127.0.0.1"):
+        return f"http://{host}:{self.port}/proxy?url={urllib.parse.quote(target_url, safe='')}"
 
-    def set_m3u_content(self, content: str):
+    def set_m3u_content(self, content: str, proxied_content: str = ""):
         """Çalma listesi içeriğini RAM yerine geçici bir dosyaya yazar."""
         try:
             with open(self.playlist_file, "w", encoding="utf-8", newline="") as f:
                 f.write(content)
         except OSError as e:
             logger.error(f"Failed to write playlist to file: {e}")
+        if proxied_content:
+            try:
+                with open(self.proxied_playlist_file, "w", encoding="utf-8", newline="") as f:
+                    f.write(proxied_content)
+            except OSError as e:
+                logger.error(f"Failed to write proxied playlist to file: {e}")

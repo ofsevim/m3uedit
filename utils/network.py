@@ -22,8 +22,13 @@ def fetch_m3u_source(
     user_agent: str,
     timeout: int,
     disable_ssl_verify: bool,
+    proxy_url: str | None = None,
+    headers: dict | None = None,
 ) -> list[bytes]:
-    """Download a playlist and return its raw lines, with size protection to avoid OOM."""
+    """Download a playlist and return its raw lines, with size protection to avoid OOM.
+    
+    Supports optional upstream proxy and custom headers (e.g. for geo-blocked/protected IPTV streams).
+    """
     try:
         from utils.config import MAX_FILE_SIZE_MB
         max_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
@@ -31,9 +36,23 @@ def fetch_m3u_source(
         max_bytes = 50 * 1024 * 1024
         MAX_FILE_SIZE_MB = 50
 
-    request = urllib.request.Request(url, headers={"User-Agent": user_agent})
+    req_headers = {"User-Agent": user_agent}
+    if headers:
+        req_headers.update(headers)
+
+    request = urllib.request.Request(url, headers=req_headers)
     context = create_ssl_context(disable_ssl_verify)
-    with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
+
+    def _open():
+        if proxy_url:
+            proxy_handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+            https_handler = urllib.request.HTTPSHandler(context=context)
+            opener = urllib.request.build_opener(proxy_handler, https_handler)
+            return opener.open(request, timeout=timeout)
+        return urllib.request.urlopen(request, timeout=timeout, context=context)
+
+    with _open() as response:
+
         # Content-Length kontrolü (eğer sunucu gönderdiyse hızlı kontrol)
         cl = None
         if hasattr(response, "getheader"):

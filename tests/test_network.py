@@ -52,3 +52,24 @@ def test_create_m3u_link_falls_back_to_dpaste():
         )
 
     assert link == "https://dpaste.com/abcd.txt"
+
+
+def test_fetch_m3u_source_with_headers_and_proxy():
+    response = MockResponse(b"", [b"#EXTM3U\n", b"http://example.com/vpn.m3u8\n"])
+
+    with patch("urllib.request.build_opener") as mock_build_opener:
+        mock_opener = mock_build_opener.return_value
+        mock_opener.open.return_value = response
+
+        lines = network.fetch_m3u_source(
+            "http://example.com/list.m3u",
+            user_agent="TiviMate/4.7.0",
+            timeout=5,
+            disable_ssl_verify=True,
+            proxy_url="http://127.0.0.1:10808",
+            headers={"Referer": "https://iptv.com"},
+        )
+
+        assert lines == [b"#EXTM3U\n", b"http://example.com/vpn.m3u8\n"]
+        assert mock_build_opener.called
+        assert mock_opener.open.called

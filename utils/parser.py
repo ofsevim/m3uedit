@@ -1,8 +1,10 @@
 import re
+import json
 import pandas as pd
 import concurrent.futures
 import urllib.request
 import urllib.error
+import urllib.parse
 import socket
 import ssl
 import time
@@ -115,32 +117,45 @@ def filter_channels(
         result = [ch for ch in result if ch.get("Grup", "") == group_filter]
     return result
 
-def _check_single_url(url: str, timeout: float = 3.0, user_agent: Optional[str] = None) -> str:
+def _check_single_url(
+    url: str,
+    timeout: float = 3.0,
+    user_agent: Optional[str] = None,
+    proxy_url: Optional[str] = None,
+    headers: Optional[Dict[str, str]] = None,
+) -> str:
     """
     Tek URL'yi mümkün olan en hızlı şekilde kontrol eder.
     
     Strateji:
       1) HEAD isteği (body indirmez, çok hızlı)
       2) HEAD 405 ise → kısa GET (sadece ilk 1KB)
-      3) Sonuca göre durum emoji döndür
+      3) Sonuca göre durum emoji ve metin döndür (403/451 durumunda VPN uyarısı)
     """
     if not url or not url.startswith(("http://", "https://")):
         return "❌ Geçersiz"
 
     # 🌐 İYİLEŞTİRME: Tutarlı ve tarayıcı benzeri User-Agent kullanılarak engellemeler önlenir
-    if not user_agent:
-        user_agent = USER_AGENT
-
-    headers = {
-        "User-Agent": user_agent,
+    req_headers = {
+        "User-Agent": user_agent or USER_AGENT,
         "Connection": "close",      # Bağlantıyı hemen kapat
         "Accept": "*/*",
     }
+    if headers:
+        req_headers.update(headers)
+
+    def _open(req):
+        if proxy_url:
+            p_handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+            s_handler = urllib.request.HTTPSHandler(context=_ssl_ctx)
+            opener = urllib.request.build_opener(p_handler, s_handler)
+            return opener.open(req, timeout=timeout)
+        return urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx)
 
     # ── 1. HEAD İsteği (en hızlı) ──
     try:
-        req = urllib.request.Request(url, headers=headers, method="HEAD")
-        with urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx) as resp:
+        req = urllib.request.Request(url, headers=req_headers, method="HEAD")
+        with _open(req) as resp:
             code = resp.status
             content_type = (resp.getheader("Content-Type") or "").lower()
 
@@ -153,10 +168,12 @@ def _check_single_url(url: str, timeout: float = 3.0, user_agent: Optional[str] 
                     return "✅ Aktif"
             elif code in (301, 302, 303, 307, 308):
                 return "🔀 Yönlendirme"
-            elif code == 403:
-                return "🔒 Yasaklı"
+            elif code in (403, 451):
+                return "🌍 VPN Gerekebilir"
             elif code == 404:
                 return "❌ Bulunamadı"
+            elif code == 401:
+                return "🔑 Yetki Gerekli"
             else:
                 return f"⚠️ HTTP {code}"
 
@@ -164,8 +181,8 @@ def _check_single_url(url: str, timeout: float = 3.0, user_agent: Optional[str] 
         if e.code == 405:
             # HEAD desteklenmiyor → kısa GET dene
             pass
-        elif e.code == 403:
-            return "🔒 Yasaklı"
+        elif e.code in (403, 451):
+            return "🌍 VPN Gerekebilir"
         elif e.code == 404:
             return "❌ Bulunamadı"
         elif e.code == 401:
@@ -180,19 +197,22 @@ def _check_single_url(url: str, timeout: float = 3.0, user_agent: Optional[str] 
 
     # ── 2. Kısa GET İsteği (sadece ilk 1KB) ──
     try:
-        headers["Range"] = "bytes=0-1023"  # Sadece ilk 1KB
-        req = urllib.request.Request(url, headers=headers, method="GET")
-        with urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx) as resp:
+        get_headers = dict(req_headers)
+        get_headers["Range"] = "bytes=0-1023"  # Sadece ilk 1KB
+        req = urllib.request.Request(url, headers=get_headers, method="GET")
+        with _open(req) as resp:
             _ = resp.read(1024)  # Sadece 1KB oku
             code = resp.status
             if code in (200, 206):
                 return "✅ Aktif"
+            elif code in (403, 451):
+                return "🌍 VPN Gerekebilir"
             else:
                 return f"⚠️ HTTP {code}"
 
     except urllib.error.HTTPError as e:
-        if e.code == 403:
-            return "🔒 CORS/Yasaklı"
+        if e.code in (403, 451):
+            return "🌍 VPN Gerekebilir"
         return f"⚠️ HTTP {e.code}"
     except (socket.timeout, TimeoutError):
         return "⏱️ Zaman Aşımı"
@@ -209,6 +229,8 @@ def batch_check_health(
     max_workers: int = 50,
     timeout: float = 3.0,
     user_agent: Optional[str] = None,
+    proxy_url: Optional[str] = None,
+    headers: Optional[Dict[str, str]] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> List[str]:
     """
@@ -227,7 +249,13 @@ def batch_check_health(
     def check_with_index(args):
         nonlocal completed
         idx, url = args
-        result = _check_single_url(url, timeout=timeout, user_agent=user_agent)
+        result = _check_single_url(
+            url,
+            timeout=timeout,
+            user_agent=user_agent,
+            proxy_url=proxy_url,
+            headers=headers,
+        )
         if progress_callback:
             try:
                 with progress_lock:
@@ -292,3 +320,43 @@ def convert_df_to_m3u(df: pd.DataFrame) -> str:
         lines.append(f'#EXTINF:-1{logo_attr} group-title="{group}",{name}')
         lines.append(url)
     return "\n".join(lines) + "\n"
+
+
+def convert_df_to_proxied_m3u(df: pd.DataFrame, proxy_base_url: str) -> str:
+    """Pandas DataFrame'i akış URL'leri yerel proxy üzerinden yönlendirilecek şekilde M3U formatına dönüştürür.
+    
+    Smart TV veya VPN olmayan harici cihazlar için uygundur.
+    """
+    lines: List[str] = ["#EXTM3U"]
+    for _, row in df.iterrows():
+        logo = _clean_m3u_field(row.get("LogoURL", ""), is_attr=True)
+        group = _clean_m3u_field(row.get("Grup", "Genel"), is_attr=True)
+        name = _clean_m3u_field(row.get("Kanal Adı", ""))
+        url = _clean_m3u_field(row.get("URL", ""))
+        proxied_url = f"{proxy_base_url}?url={urllib.parse.quote(url, safe='')}"
+        logo_attr = f' tvg-logo="{logo}"' if logo else ""
+        lines.append(f'#EXTINF:-1{logo_attr} group-title="{group}",{name}')
+        lines.append(proxied_url)
+    return "\n".join(lines) + "\n"
+
+
+def convert_df_to_csv(df: pd.DataFrame) -> str:
+    """Kanal listesini CSV formatına dönüştürür."""
+    cols = [c for c in ["Kanal Adı", "Grup", "URL", "Tür", "LogoURL", "Durum"] if c in df.columns]
+    target_df = df[cols] if cols else df
+    return target_df.to_csv(index=False, encoding="utf-8")
+
+
+def convert_df_to_json(df: pd.DataFrame) -> str:
+    """Kanal listesini JSON formatına dönüştürür."""
+    cols = [c for c in ["Kanal Adı", "Grup", "URL", "Tür", "LogoURL", "Durum"] if c in df.columns]
+    target_df = df[cols] if cols else df
+    return target_df.to_json(orient="records", indent=2, force_ascii=False)
+
+
+def convert_df_to_txt(df: pd.DataFrame) -> str:
+    """Sadece URL listesini TXT formatında döndürür."""
+    if "URL" in df.columns:
+        return "\n".join(df["URL"].dropna().astype(str).tolist()) + "\n"
+    return ""
+

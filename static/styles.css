@@ -339,3 +339,33 @@ hr {
         width: 100% !important;
     }
 }
+
+/* Tablar & Data Editor */
+[data-testid="stTabs"] [role="tablist"] {
+    gap: 8px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+}
+
+[data-testid="stTabs"] [role="tab"] {
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-weight: 600;
+    color: var(--text-soft);
+    background: var(--surface);
+    border: 1px solid transparent;
+}
+
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+    color: #f8fafc !important;
+    background: var(--surface-strong) !important;
+    border-color: rgba(249, 115, 22, 0.4) !important;
+}
+
+[data-testid="stDataEditor"] {
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    overflow: hidden;
+    background: rgba(11, 18, 32, 0.58);
+}
+

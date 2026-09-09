@@ -9,7 +9,7 @@ PAGE_TITLE = "M3U Editör Pro (Web)"
 # Sayfa ikonu (emoji)
 PAGE_ICON = "📺"
 
-# === NETWORK AYARLARI ===
+# === NETWORK & PROXY AYARLARI ===
 
 # URL istekleri için zaman aşımı süresi (saniye)
 REQUEST_TIMEOUT = 30
@@ -18,8 +18,22 @@ REQUEST_TIMEOUT = 30
 # ⚠️ Güvenlik riski: Sadece güvendiğiniz kaynaklar için True yapın
 DISABLE_SSL_VERIFY = True
 
-# User-Agent header (bazı sunucular bot tespiti yapar)
+# Varsayılan User-Agent
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+# Yurt dışı & engelli kanallar için hazır Cihaz / User-Agent profilleri
+# Birçok IPTV sunucusu tarayıcıları engellerken VLC, TiviMate veya Kodi'ye izin verir.
+USER_AGENT_PROFILES = {
+    "Standart (Tarayıcı)": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "TiviMate (IPTV)": "TiviMate/4.7.0 (Android TV)",
+    "VLC Media Player": "VLC/3.0.18 LibVLC/3.0.18",
+    "Smart IPTV (SIPTV)": "SmartIPTV/1.7.0 (WebOS; LG)",
+    "Kodi IPTV Simple": "Kodi/20.2 (Windows NT 10.0; Win64; x64) IPTV-Simple",
+    "Apple TV / iOS": "AppleCoreMedia/1.0.0.19J580 (Apple TV; CPU OS 15_6 like Mac OS X)",
+}
+
+# Varsayılan Upstream Proxy (örn: 'http://127.0.0.1:10808' veya boş)
+DEFAULT_UPSTREAM_PROXY = ""
 
 # === FİLTRELEME AYARLARI ===
 
@@ -34,30 +48,17 @@ TR_KEYWORDS = [
 # Varsayılan olarak TR filtresi aktif mi?
 DEFAULT_TR_FILTER = True
 
-# === TABLO AYARLARI ===
+# === TABLO & DÜZENLEME AYARLARI ===
 
 # Tablo yüksekliği (piksel)
 TABLE_HEIGHT = 600
-
-# Sayfa başına maksimum kayıt sayısı (0 = sınırsız)
-# Not: Çok büyük listeler performans sorunlarına yol açabilir
-MAX_ROWS_PER_PAGE = 0
 
 # === EXPORT AYARLARI ===
 
 # Varsayılan export dosya adı
 DEFAULT_EXPORT_FILENAME = "iptv_listesi"
 
-# Export dosya uzantısı
-EXPORT_FILE_EXTENSION = ".m3u"
-
 # === GELİŞMİŞ AYARLAR ===
-
-# Debug modu (daha fazla log mesajı)
-DEBUG_MODE = False
-
-# Cache süresi (saniye, 0 = cache yok)
-CACHE_TTL = 300
 
 # Maksimum dosya boyutu (MB, dosya yükleme için)
 MAX_FILE_SIZE_MB = 50
@@ -70,13 +71,9 @@ HEALTH_CHECK_MAX_WORKERS = 30
 # Sağlık kontrolü zaman aşımı (saniye)
 HEALTH_CHECK_TIMEOUT = 3
 
-# Varsayılan kontrol edilecek maksimum kanal sayısı
+# Varsayılan kontrol edilecek maksimum kanal sayısı (0 = Tümü)
 HEALTH_CHECK_MAX_CHANNELS = 50
 
-# === FAVORİ & GEÇMİŞ ===
-
-# Geçmişte tutulacak maksimum kayıt sayısı
-MAX_HISTORY_ENTRIES = 100
-
 # === UYGULAMA VERSİYONU ===
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.0"
+
