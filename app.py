@@ -447,50 +447,12 @@ with st.sidebar:
         "</div>",
         unsafe_allow_html=True,
     )
-    st.markdown("---")
-
-    # 🌍 Yurt Dışı & VPN Çözümleri Paneli
-    with st.expander("🌍 Yurt Dışı & VPN Çözümleri", expanded=bool(st.session_state.upstream_proxy)):
-        st.caption("Yurt dışı kaynaklı veya bölge kısıtlamalı IPTV akışları için proxy tüneli ve kimlik ayarları:")
-        cfg_proxy = st.text_input(
-            "Proxy / VPN Tüneli (HTTP/SOCKS):",
-            value=st.session_state.upstream_proxy,
-            placeholder="http://127.0.0.1:10808 veya http://proxy:port",
-            help="Yerel VPN istemcinizin (Clash, v2ray, xray vb.) veya harici proxy sunucunuzun adresi. Tanımlandığında tüm akışlar ve taramalar buradan tünellenir.",
-            key="cfg_proxy_input",
-        )
-        profile_list = list(USER_AGENT_PROFILES.keys())
-        p_index = profile_list.index(st.session_state.selected_ua_profile) if st.session_state.selected_ua_profile in profile_list else 0
-        cfg_profile = st.selectbox(
-            "Oynatıcı / Cihaz Profili (User-Agent):",
-            profile_list,
-            index=p_index,
-            help="Birçok yabancı IPTV sunucusu tarayıcıları engeller (403 Forbidden). TiviMate veya VLC seçerek kimlik engelini aşabilirsiniz.",
-            key="cfg_profile_select",
-        )
-        cfg_ref = st.text_input(
-            "Özel Referer Başlığı (Opsiyonel):",
-            value=st.session_state.custom_referer,
-            placeholder="Örn: https://iptv-provider.com",
-            help="Yayıncı sunucu sadece kendi web sitesinden gelen isteklere izin veriyorsa doldurun.",
-            key="cfg_ref_input",
-        )
-
-        st.session_state.upstream_proxy = cfg_proxy.strip()
-        st.session_state.selected_ua_profile = cfg_profile
-        st.session_state.custom_referer = cfg_ref.strip()
-
-        active_ua = USER_AGENT_PROFILES.get(cfg_profile, USER_AGENT)
-        get_proxy_server().set_proxy_config(
-            upstream_proxy=st.session_state.upstream_proxy,
-            custom_user_agent=active_ua,
-            custom_referer=st.session_state.custom_referer,
-        )
-
-        if st.session_state.upstream_proxy:
-            st.success("🟢 Proxy Tüneli Aktif")
-        else:
-            st.info("⚪ Doğrudan Bağlantı")
+    
+    # Ağ & Proxy mini durum göstergesi
+    if st.session_state.upstream_proxy:
+        st.markdown("<div style='margin:8px 0;padding:4px 8px;border-radius:8px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);font-size:0.78rem;color:#86efac;'>🟢 <b>VPN/Proxy Aktif</b></div>", unsafe_allow_html=True)
+    else:
+        st.markdown("<div style='margin:8px 0;padding:4px 8px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);font-size:0.78rem;color:#94a3b8;'>⚪ <b>Doğrudan Bağlantı</b></div>", unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -623,70 +585,90 @@ if not st.session_state.data.empty:
     if selected_statuses:
         df_display = df_display[df_display["Durum"].isin(selected_statuses)]
 
+    # Üst Başlık
     st.markdown(
         f"""
         <div class="page-header fade-in">
             <h1>{PAGE_ICON} {html.escape(PAGE_TITLE)}</h1>
-            <p>Kanalları filtreleyin, sağlık kontrolü yapın ve doğrudan oynatın.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    search_term = st.text_input("🔍 Kanal Ara:", "", placeholder="Kanal adı veya grup yazın...")
-    if search_term:
-        df_display = df_display[
-            _safe_contains(df_display["Kanal Adı"], search_term)
-            | _safe_contains(df_display["Grup"], search_term)
-        ]
 
     status_counts = _status_counts(df_display)
     group_count = df_display["Grup"].nunique()
     hls_count = int((df_display["Tür"] == "HLS").sum()) if "Tür" in df_display.columns else 0
 
     mc1, mc2, mc3, mc4, mc5 = st.columns(5)
-    mc1.metric("📺 Görünen", len(df_display))
-    mc2.metric("📁 Grup", group_count)
+    mc1.metric("📺 Görünen Kanal", f"{len(df_display)} / {len(st.session_state.data)}")
+    mc2.metric("📁 Gruplar", group_count)
     mc3.metric("🟢 Aktif", status_counts["active"])
     mc4.metric("🌍 VPN Gerekli", status_counts["vpn"])
     mc5.metric("📡 HLS", hls_count)
-    st.caption(f"Gösterilen: {len(df_display)} / {len(st.session_state.data)} kanal")
 
     active_filters = []
-    if search_term:
-        active_filters.append(f"Arama: {search_term}")
     active_filters.extend(f"Grup: {value}" for value in selected_groups)
     active_filters.extend(f"Tür: {value}" for value in selected_types)
     active_filters.extend(f"Durum: {value}" for value in selected_statuses)
-    summary_text = " • ".join(active_filters) if active_filters else "Tüm kanallar gösteriliyor"
-    st.markdown(
-        f"<div class='simple-strip'><strong>Filtreler</strong><span>{html.escape(summary_text)}</span></div>",
-        unsafe_allow_html=True,
-    )
-
-    # =====================================================================
-    # HIZLI İŞLEMLER & SAĞLIK KONTROLÜ
-    # =====================================================================
-    st.markdown("### ⚡ Hızlı İşlemler")
-    act_col1, act_col2, act_col3, act_col4 = st.columns(4)
-
-    with act_col1:
-        health_limit_options = [50, 100, 250, 500, "Tümü"]
-        h_limit = st.selectbox(
-            "Taranacak Kanal Sayısı",
-            health_limit_options,
-            index=0,
-            label_visibility="collapsed",
-            key="h_limit_sel"
+    if active_filters:
+        st.markdown(
+            f"<div class='simple-strip'><strong>Aktif Filtreler:</strong> <span>{' • '.join(active_filters)}</span></div>",
+            unsafe_allow_html=True,
         )
-        if st.button("🔍 Sağlık Kontrolü", use_container_width=True, type="primary"):
+
+    # 4 ANA ODAKLI SEKME
+    tab_editor, tab_player, tab_export, tab_vpn = st.tabs([
+        "📋 Kanallar & Düzenle",
+        "🎬 Canlı Oynatıcı",
+        "📤 Dışa Aktar & Paylaş",
+        "🌍 VPN & Yurt Dışı Çözümleri",
+    ])
+
+    # =====================================================================
+    # SEKME 1: KANALLAR & DÜZENLEME
+    # =====================================================================
+    with tab_editor:
+        # Arama çubuğu
+        search_term = st.text_input("🔍 Kanal veya Grup Ara:", "", placeholder="Kanal adı veya grup yazarak anında filtreleyin...", key="tab_search")
+        if search_term:
+            df_display = df_display[
+                _safe_contains(df_display["Kanal Adı"], search_term)
+                | _safe_contains(df_display["Grup"], search_term)
+            ]
+
+        # Hızlı Aksiyonlar
+        st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
+        act1, act2, act3, act4 = st.columns([2.4, 1.4, 1.4, 1.2])
+
+        with act1:
+            c_sel, c_btn = st.columns([1, 1.4])
+            with c_sel:
+                h_limit = st.selectbox(
+                    "Tarama Limiti",
+                    [50, 100, 250, 500, "Tümü"],
+                    index=0,
+                    label_visibility="collapsed",
+                    key="h_limit_sel_editor",
+                )
+            with c_btn:
+                run_health = st.button("🔍 Sağlık Kontrolü", use_container_width=True, type="primary")
+
+        with act2:
+            has_dead = bool((st.session_state.data["Durum"].astype(str).str.contains("❌|⏱️|Geçersiz|Bulunamadı", na=False)).any())
+            clean_dead = st.button("🧹 Ölüleri Temizle", use_container_width=True, disabled=not has_dead, help="❌ ve ⏱️ durumundaki kanalları listeden çıkarır.")
+
+        with act3:
+            has_active = bool((st.session_state.data["Durum"].astype(str).str.contains("✅", na=False)).any())
+            keep_active = st.button("⭐ Sadece Çalışanlar", use_container_width=True, disabled=not has_active, help="Yalnızca '✅ Aktif' kanalları korur.")
+
+        with act4:
+            toggle_add = st.button("➕ Kanal Ekle", use_container_width=True)
+
+        if run_health:
             max_health = len(df_display) if h_limit == "Tümü" else int(h_limit)
             urls = df_display["URL"].head(max_health).tolist()
             total = len(urls)
-            if len(df_display) > total:
-                st.info(f"Sağlık kontrolü ilk {total} kanal ile sınırlandı.")
-
             progress_bar = st.progress(0, text=f"🔍 Taranıyor... 0/{total}")
-            status_text = st.empty()
             start_time = time.time()
 
             def update_progress(completed, total_count):
@@ -713,8 +695,6 @@ if not st.session_state.data.empty:
             )
 
             elapsed = round(time.time() - start_time, 1)
-
-            # Sonuçları ana veriye yaz
             for i, u in enumerate(urls):
                 st.session_state.data.loc[st.session_state.data["URL"] == u, "Durum"] = results[i]
 
@@ -722,19 +702,12 @@ if not st.session_state.data.empty:
             vpn_cnt = sum(1 for r in results if "🌍" in r)
             oldu = sum(1 for r in results if "❌" in r)
             diger = total - aktif - vpn_cnt - oldu
-
             progress_bar.empty()
-            status_text.empty()
-            st.success(
-                f"✅ Tamamlandı ({elapsed}s) — "
-                f"🟢 {aktif} aktif | 🌍 {vpn_cnt} VPN gerekli | 🔴 {oldu} ölü | 🟡 {diger} belirsiz"
-            )
-            time.sleep(1.5)
+            st.success(f"✅ Tamamlandı ({elapsed}s) — 🟢 {aktif} aktif | 🌍 {vpn_cnt} VPN gerekli | 🔴 {oldu} ölü | 🟡 {diger} belirsiz")
+            time.sleep(1.2)
             st.rerun()
 
-    with act_col2:
-        has_dead = bool((st.session_state.data["Durum"].astype(str).str.contains("❌|⏱️|Geçersiz|Bulunamadı", na=False)).any())
-        if st.button("🧹 Ölü Kanalları Temizle", use_container_width=True, disabled=not has_dead, help="❌ veya ⏱️ durumundaki kanalları listeden çıkarır."):
+        if clean_dead:
             before_len = len(st.session_state.data)
             st.session_state.data = st.session_state.data[
                 ~st.session_state.data["Durum"].astype(str).str.contains("❌|⏱️|Geçersiz|Bulunamadı", na=False)
@@ -743,9 +716,7 @@ if not st.session_state.data.empty:
             st.toast(f"🧹 {removed} adet çalışmayan kanal temizlendi!", icon="✅")
             st.rerun()
 
-    with act_col3:
-        has_active = bool((st.session_state.data["Durum"].astype(str).str.contains("✅", na=False)).any())
-        if st.button("⭐ Sadece Çalışanları Tut", use_container_width=True, disabled=not has_active, help="Yalnızca '✅ Aktif' olan kanalları korur."):
+        if keep_active:
             before_len = len(st.session_state.data)
             st.session_state.data = st.session_state.data[
                 st.session_state.data["Durum"].astype(str).str.contains("✅", na=False)
@@ -753,333 +724,377 @@ if not st.session_state.data.empty:
             st.toast(f"⭐ Sadece {len(st.session_state.data)} aktif kanal korundu!", icon="⭐")
             st.rerun()
 
-    with act_col4:
-        if st.button("➕ Yeni Kanal Ekle", use_container_width=True):
+        if toggle_add:
             st.session_state.show_add_channel = not st.session_state.get("show_add_channel", False)
             st.rerun()
 
-    # Yeni Kanal Ekle Formu
-    if st.session_state.get("show_add_channel"):
-        with st.container():
-            st.markdown("#### ➕ Yeni Kanal Ekle")
-            with st.form("new_channel_form", clear_on_submit=True):
-                c_col1, c_col2 = st.columns(2)
-                with c_col1:
-                    add_name = st.text_input("Kanal Adı *")
-                    add_group = st.text_input("Grup *", value="Genel")
-                with c_col2:
-                    add_url = st.text_input("Akış (Stream) URL *")
-                    add_logo = st.text_input("Logo URL (Opsiyonel)")
-                sub1, sub2 = st.columns([1, 4])
-                with sub1:
-                    submit_add = st.form_submit_button("Listeye Ekle", type="primary", use_container_width=True)
-                with sub2:
-                    cancel_add = st.form_submit_button("Vazgeç / Kapat")
+        if st.session_state.get("show_add_channel"):
+            with st.container():
+                st.markdown("##### ➕ Yeni Kanal Ekle")
+                with st.form("add_channel_form_inline", clear_on_submit=True):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        new_name = st.text_input("Kanal Adı *")
+                        new_grp = st.text_input("Grup *", value="Genel")
+                    with c2:
+                        new_url = st.text_input("Akış URL *")
+                        new_logo = st.text_input("Logo URL")
+                    s1, s2 = st.columns([1, 4])
+                    with s1:
+                        add_submit = st.form_submit_button("Listeye Ekle", type="primary", use_container_width=True)
+                    with s2:
+                        add_cancel = st.form_submit_button("Kapat")
 
-                if submit_add:
-                    if not add_name.strip() or not add_url.strip():
-                        st.error("Kanal Adı ve Akış URL zorunludur!")
-                    else:
-                        add_type = "HLS" if (".m3u8" in add_url.lower() or "/live/" in add_url.lower()) else "Diğer"
-                        new_row = pd.DataFrame([{
-                            "Kanal Adı": add_name.strip(),
-                            "Grup": add_group.strip() or "Genel",
-                            "URL": add_url.strip(),
-                            "LogoURL": add_logo.strip(),
-                            "Tür": add_type,
-                            "Durum": "❔ Bekliyor",
-                        }])
-                        st.session_state.data = pd.concat([new_row, st.session_state.data], ignore_index=True)
+                    if add_submit:
+                        if not new_name.strip() or not new_url.strip():
+                            st.error("Kanal Adı ve Akış URL zorunludur!")
+                        else:
+                            new_t = "HLS" if (".m3u8" in new_url.lower() or "/live/" in new_url.lower()) else "Diğer"
+                            new_row = pd.DataFrame([{
+                                "Kanal Adı": new_name.strip(),
+                                "Grup": new_grp.strip() or "Genel",
+                                "URL": new_url.strip(),
+                                "LogoURL": new_logo.strip(),
+                                "Tür": new_t,
+                                "Durum": "❔ Bekliyor",
+                            }])
+                            st.session_state.data = pd.concat([new_row, st.session_state.data], ignore_index=True)
+                            st.session_state.show_add_channel = False
+                            st.success(f"✅ '{new_name}' eklendi!")
+                            st.rerun()
+                    elif add_cancel:
                         st.session_state.show_add_channel = False
-                        st.success(f"✅ '{add_name}' kanalı listeye eklendi!")
                         st.rerun()
-                elif cancel_add:
-                    st.session_state.show_add_channel = False
+
+        # Data Editor Tablosu
+        display_cols = [c for c in ["Durum", "Grup", "Kanal Adı", "URL", "Tür"] if c in df_display.columns]
+        table_df = df_display[display_cols] if display_cols else df_display
+
+        edited_df = st.data_editor(
+            table_df,
+            use_container_width=True,
+            hide_index=True,
+            height=TABLE_HEIGHT,
+            num_rows="dynamic",
+            disabled=["Durum", "Tür"],
+            key="channel_data_editor",
+            column_config={
+                "URL": st.column_config.TextColumn("URL", width="large"),
+                "Tür": st.column_config.TextColumn("Tür", width="small"),
+                "Durum": st.column_config.TextColumn("Durum", width="small"),
+                "Grup": st.column_config.TextColumn("Grup", width="medium"),
+                "Kanal Adı": st.column_config.TextColumn("Kanal Adı", width="medium"),
+            },
+        )
+
+        if st.button("💾 Tablodaki Düzenlemeleri Listeye Kaydet", use_container_width=True):
+            st.session_state.data = edited_df
+            st.toast("✅ Düzenlemeler kaydedildi!", icon="✅")
+            time.sleep(0.8)
+            st.rerun()
+
+    # =====================================================================
+    # SEKME 2: CANLI OYNATICI (SİNEMATİK MOD)
+    # =====================================================================
+    with tab_player:
+        play_options = []
+        play_url_map = {}
+
+        for idx, row in df_display.iterrows():
+            durum = row.get("Durum", "❔").split(" ")[0] if "Durum" in row else "❔"
+            base_name = f"{durum} {row['Kanal Adı']}"
+
+            display_name = base_name
+            counter = 2
+            while display_name in play_url_map:
+                display_name = f"{base_name} ({counter})"
+                counter += 1
+
+            play_options.append(display_name)
+            play_url_map[display_name] = {
+                "name": row["Kanal Adı"],
+                "url": row["URL"],
+                "logo": row.get("LogoURL", ""),
+                "group": row.get("Grup", ""),
+                "durum": row.get("Durum", ""),
+            }
+
+        current_play = st.session_state.get("play_channel")
+        default_index = 0
+        if current_play:
+            for i, opt in enumerate(play_options):
+                info = play_url_map[opt]
+                if info["name"] == current_play.get("name") and info["url"] == current_play.get("url"):
+                    default_index = i + 1
+                    break
+
+        p_left, p_right = st.columns([1.3, 2.7])
+        with p_left:
+            st.markdown("##### 📻 Kanal Seçimi")
+            play_name_display = st.selectbox(
+                "Oynatılacak Kanal",
+                options=["Seçiniz..."] + play_options,
+                index=default_index,
+                key="player_tab_select_box",
+                label_visibility="collapsed",
+            )
+            if play_name_display != "Seçiniz...":
+                selected_info = play_url_map.get(play_name_display)
+                if selected_info:
+                    current = st.session_state.get("play_channel")
+                    if not current or current.get("url") != selected_info["url"] or current.get("name") != selected_info["name"]:
+                        st.session_state.play_channel = selected_info
+                        st.rerun()
+            else:
+                if st.session_state.play_channel:
+                    st.session_state.play_channel = None
                     st.rerun()
 
+            if st.session_state.play_channel:
+                pc = st.session_state.play_channel
+                st.markdown("---")
+                if pc.get("logo"):
+                    try:
+                        st.image(pc["logo"], width=100)
+                    except Exception:
+                        pass
+                st.markdown(f"**Kanal:** {pc['name']}")
+                st.markdown(f"**Grup:** {pc.get('group', 'Genel')}")
+                
+                if "VPN" in pc.get("durum", ""):
+                    st.warning("🌍 Bölgesel Kısıtlama (VPN gerekebilir).")
+                elif "CORS" in pc.get("durum", ""):
+                    st.info("⚠️ CORS Kısıtlı — Yerel proxy aktif.")
+                else:
+                    st.markdown(f"**Durum:** {pc.get('durum', '❔')}")
+
+                st.caption("📋 Akış URL:")
+                st.code(pc["url"], language=None)
+
+                proxy_srv = get_proxy_server()
+                st.caption("🛡️ Yerel Proxy URL:")
+                st.code(proxy_srv.get_proxy_url(pc["url"]), language=None)
+
+                b_stop, b_dl = st.columns(2)
+                with b_stop:
+                    if st.button("⏹ Durdur", use_container_width=True):
+                        st.session_state.play_channel = None
+                        st.rerun()
+                with b_dl:
+                    single_m3u = f"#EXTM3U\n#EXTINF:-1,{pc['name']}\n{pc['url']}"
+                    st.download_button("📥 Bu Kanalı İndir", data=single_m3u, file_name=f"{pc['name']}.m3u", use_container_width=True)
+            else:
+                st.info("👈 Kanal seçtiğinizde yayın otomatik başlar.")
+
+        with p_right:
+            if st.session_state.play_channel:
+                pc = st.session_state.play_channel
+                st.markdown(f"#### ▶ {pc['name']}")
+                components.html(render_live_player(pc["url"], height=420), height=460)
+            else:
+                st.markdown(
+                    "<div style='height:440px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(11,18,32,0.7);border-radius:14px;border:1px dashed rgba(255,255,255,0.12);'>"
+                    "<span style='font-size:3.5rem;'>📺</span>"
+                    "<p style='color:#94a3b8;margin-top:12px;font-weight:600;'>Henüz oynatılan kanal yok</p>"
+                    "<p style='color:#64748b;font-size:0.85rem;'>Sol menüden bir kanal seçtiğinizde burada canlı izleyebilirsiniz.</p>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+
     # =====================================================================
-    # DIŞA AKTARMA & PAYLAŞIM MERKEZİ
+    # SEKME 3: DIŞA AKTAR & PAYLAŞ
     # =====================================================================
-    st.markdown("### 📤 Dışa Aktarma & Paylaşım Merkezi")
-    
-    # Yerel ağ IP adresi tespiti
-    import socket
-    def _get_lan_ip():
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.connect(("8.8.8.8", 80))
-                return s.getsockname()[0]
-        except Exception:
-            return "127.0.0.1"
+    with tab_export:
+        import socket
+        def _get_lan_ip():
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    s.connect(("8.8.8.8", 80))
+                    return s.getsockname()[0]
+            except Exception:
+                return "127.0.0.1"
 
-    lan_ip = _get_lan_ip()
-    proxy_server = get_proxy_server()
-    lan_proxy_base = f"http://{lan_ip}:{proxy_server.port}/proxy"
-    
-    m3u_standard = convert_df_to_m3u(df_display)
-    m3u_proxied = convert_df_to_proxied_m3u(df_display, lan_proxy_base)
-    
-    # Yerel proxy sunucusuna çalma listelerini yaz
-    proxy_server.set_m3u_content(m3u_standard, proxied_content=m3u_proxied)
+        lan_ip = _get_lan_ip()
+        proxy_server = get_proxy_server()
+        lan_proxy_base = f"http://{lan_ip}:{proxy_server.port}/proxy"
+        
+        m3u_standard = convert_df_to_m3u(df_display)
+        m3u_proxied = convert_df_to_proxied_m3u(df_display, lan_proxy_base)
+        proxy_server.set_m3u_content(m3u_standard, proxied_content=m3u_proxied)
 
-    tab_m3u, tab_vpn_bridge, tab_data, tab_share = st.tabs([
-        "📥 M3U / M3U8 İndir",
-        "🌍 Smart TV / VPN Köprüsü M3U",
-        "📊 CSV & JSON & TXT",
-        "🔗 Canlı Link Paylaşımı",
-    ])
+        exp_c1, exp_c2 = st.columns(2)
+        with exp_c1:
+            st.markdown("#### 📥 Standart Oynatıcı Dosyaları")
+            st.caption("VLC, PotPlayer, Kodi, TiviMate gibi standart IPTV oynatıcıları için.")
+            sub_m1, sub_m2 = st.columns(2)
+            with sub_m1:
+                st.download_button(
+                    label=f"📥 Standart M3U ({len(df_display)})",
+                    data=m3u_standard,
+                    file_name="iptv_listesi.m3u",
+                    mime="text/plain",
+                    type="primary",
+                    use_container_width=True,
+                )
+            with sub_m2:
+                st.download_button(
+                    label="📥 Genişletilmiş M3U8",
+                    data=m3u_standard,
+                    file_name="iptv_listesi.m3u8",
+                    mime="application/x-mpegURL",
+                    use_container_width=True,
+                )
 
-    with tab_m3u:
-        exp_col1, exp_col2 = st.columns(2)
-        with exp_col1:
-            st.download_button(
-                label=f"📥 Standart M3U İndir ({len(df_display)} Kanal)",
-                data=m3u_standard,
-                file_name="iptv_listesi.m3u",
-                mime="text/plain",
-                type="primary",
-                use_container_width=True,
+            st.markdown("<div style='margin-top:25px;'></div>", unsafe_allow_html=True)
+            st.markdown("#### 📊 Veri & Ham Formatlar")
+            st.caption("Excel veya programatik analizler için:")
+            d1, d2, d3 = st.columns(3)
+            with d1:
+                st.download_button("📊 Excel / CSV", data=convert_df_to_csv(df_display), file_name="kanallar.csv", mime="text/csv", use_container_width=True)
+            with d2:
+                st.download_button("📦 JSON", data=convert_df_to_json(df_display), file_name="kanallar.json", mime="application/json", use_container_width=True)
+            with d3:
+                st.download_button("📄 TXT (Ham URL)", data=convert_df_to_txt(df_display), file_name="linkler.txt", mime="text/plain", use_container_width=True)
+
+        with exp_c2:
+            st.markdown("#### 🌍 Smart TV / VPN Köprüsü M3U")
+            st.info(
+                "💡 **Smart TV İçin Kolay Çözüm:** TV veya mobil cihazınızda VPN kurulu değilse bu seçeneği kullanın! "
+                "Akışlar bu bilgisayar üzerinden tünellenir. Bilgisayar açık ve VPN'e bağlı olduğu sürece TV tüm yurt dışı kanalları açar."
             )
-        with exp_col2:
             st.download_button(
-                label=f"📥 Genişletilmiş M3U8 İndir ({len(df_display)} Kanal)",
-                data=m3u_standard,
-                file_name="iptv_listesi.m3u8",
-                mime="application/x-mpegURL",
-                use_container_width=True,
-            )
-
-    with tab_vpn_bridge:
-        st.info(
-            "💡 **Smart TV & Harici Cihazlar İçin VPN Köprüsü:**\n\n"
-            "Smart TV, Android Box veya mobil cihazınızda VPN kurulu değilse bu seçeneği kullanın! "
-            "Bu M3U listesindeki tüm akışlar bilgisayarınızın yerel proxy sunucusu üzerinden tünellenir. "
-            "Bilgisayarınız açık olduğu ve VPN'e/Proxy'ye bağlı olduğu sürece, TV'niz de tüm yurt dışı kanalları kesintisiz izleyebilir."
-        )
-        vcol1, vcol2 = st.columns(2)
-        with vcol1:
-            st.download_button(
-                label="🌍 VPN Köprüsü M3U Dosyası İndir",
+                label="🌍 VPN Köprüsü M3U İndir",
                 data=m3u_proxied,
                 file_name="vpn_koprusu_listesi.m3u",
                 mime="text/plain",
                 type="primary",
                 use_container_width=True,
-                help="Smart TV'nize aktarmak için indirin.",
             )
-        with vcol2:
-            proxied_lan_url = f"http://{lan_ip}:{proxy_server.port}/proxied_playlist.m3u"
-            st.caption("Aynı Wi-Fi/Ağdaki Smart TV için doğrudan URL:")
-            st.code(proxied_lan_url, language=None)
+            st.caption("Aynı Wi-Fi/Ağdaki Smart TV'ler için doğrudan Canlı Link:")
+            st.code(f"http://{lan_ip}:{proxy_server.port}/proxied_playlist.m3u", language=None)
 
-    with tab_data:
-        dcol1, dcol2, dcol3 = st.columns(3)
-        with dcol1:
-            st.download_button(
-                label="📊 Excel / CSV İndir",
-                data=convert_df_to_csv(df_display),
-                file_name="iptv_kanallar.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
-        with dcol2:
-            st.download_button(
-                label="📦 JSON Formatında İndir",
-                data=convert_df_to_json(df_display),
-                file_name="iptv_kanallar.json",
-                mime="application/json",
-                use_container_width=True,
-            )
-        with dcol3:
-            st.download_button(
-                label="📄 TXT (Ham URL Listesi)",
-                data=convert_df_to_txt(df_display),
-                file_name="iptv_linkler.txt",
-                mime="text/plain",
-                use_container_width=True,
-            )
-
-    with tab_share:
-        sh_btn = st.button("🚀 İnternet Paylaşım Linki Oluştur (termbin.com)", use_container_width=True)
-        if sh_btn or st.session_state.get("m3u_cloud_link"):
-            if sh_btn:
-                with st.spinner("Bulut linki üretiliyor..."):
+            st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+            st.markdown("#### 🌐 Canlı Bulut Paylaşımı")
+            if st.button("🚀 İnternet Paylaşım Linki Oluştur (termbin.com)", use_container_width=True):
+                with st.spinner("Link üretiliyor..."):
                     st.session_state.m3u_cloud_link = network_utils.create_m3u_link(
                         m3u_standard,
                         user_agent=USER_AGENT,
                         disable_ssl_verify=DISABLE_SSL_VERIFY,
                     )
             if st.session_state.get("m3u_cloud_link"):
-                st.success("İnternet üzerinden (dış ağlar, mobil, uzaktaki TV vb.) erişilecek doğrudan link:")
                 st.code(st.session_state.m3u_cloud_link, language=None)
+
+    # =====================================================================
+    # SEKME 4: VPN & YURT DIŞI ÇÖZÜMLERİ
+    # =====================================================================
+    with tab_vpn:
+        v_col_settings, v_col_guide = st.columns([1.2, 1.8])
+        with v_col_settings:
+            st.markdown("#### ⚙️ Proxy & Tünel Ayarları")
+            st.caption("Yurt dışı veya bölge engelli akışları aşmak için proxy ve kimlik profili yapılandırması:")
+
+            cfg_proxy = st.text_input(
+                "Proxy / VPN Tüneli (HTTP/SOCKS):",
+                value=st.session_state.upstream_proxy,
+                placeholder="http://127.0.0.1:10808 veya http://proxy:port",
+                help="Yerel VPN istemcinizin (Clash, v2ray, xray vb.) veya harici proxy adresiniz.",
+                key="tab_vpn_proxy_input",
+            )
+            profile_list = list(USER_AGENT_PROFILES.keys())
+            p_index = profile_list.index(st.session_state.selected_ua_profile) if st.session_state.selected_ua_profile in profile_list else 0
+            cfg_profile = st.selectbox(
+                "Oynatıcı / Cihaz Profili (User-Agent):",
+                profile_list,
+                index=p_index,
+                help="Sunucuların tarayıcı engellerini aşmak için TiviMate veya VLC seçebilirsiniz.",
+                key="tab_vpn_profile_select",
+            )
+            cfg_ref = st.text_input(
+                "Özel Referer Başlığı (Opsiyonel):",
+                value=st.session_state.custom_referer,
+                placeholder="Örn: https://iptv-provider.com",
+                key="tab_vpn_ref_input",
+            )
+
+            st.session_state.upstream_proxy = cfg_proxy.strip()
+            st.session_state.selected_ua_profile = cfg_profile
+            st.session_state.custom_referer = cfg_ref.strip()
+
+            active_ua = USER_AGENT_PROFILES.get(cfg_profile, USER_AGENT)
+            get_proxy_server().set_proxy_config(
+                upstream_proxy=st.session_state.upstream_proxy,
+                custom_user_agent=active_ua,
+                custom_referer=st.session_state.custom_referer,
+            )
+
+            if st.session_state.upstream_proxy:
+                st.success(f"🟢 **Tünel Devrede:** `{st.session_state.upstream_proxy}`\n\nTüm taramalar ve yerel proxy bu tünelden geçiyor.")
             else:
-                st.error("Bulut linki oluşturulamadı. İnternet bağlantınızı kontrol edin.")
+                st.info("⚪ **Doğrudan Bağlantı:** Herhangi bir ara proxy kullanılmıyor.")
 
-        st.caption("Aynı Wi-Fi/Ağdaki Oynatıcılar için Yerel M3U Bağlantısı:")
-        st.code(f"http://{lan_ip}:{proxy_server.port}/playlist.m3u", language=None)
-
-    # =====================================================================
-    # CANLI OYNATICI
-    # =====================================================================
-    st.markdown("### 🎬 Canlı Oynatıcı")
-
-    play_options = []
-    play_url_map = {}
-
-    for idx, row in df_display.iterrows():
-        durum = row.get("Durum", "❔").split(" ")[0] if "Durum" in row else "❔"
-        base_name = f"{durum} {row['Kanal Adı']}"
-
-        display_name = base_name
-        counter = 2
-        while display_name in play_url_map:
-            display_name = f"{base_name} ({counter})"
-            counter += 1
-
-        play_options.append(display_name)
-        play_url_map[display_name] = {
-            "name": row["Kanal Adı"],
-            "url": row["URL"],
-            "logo": row.get("LogoURL", ""),
-            "group": row.get("Grup", ""),
-            "durum": row.get("Durum", ""),
-        }
-
-    current_play = st.session_state.get("play_channel")
-    default_index = 0
-    if current_play:
-        for i, opt in enumerate(play_options):
-            info = play_url_map[opt]
-            if info["name"] == current_play.get("name") and info["url"] == current_play.get("url"):
-                default_index = i + 1
-                break
-
-    play_name_display = st.selectbox(
-        "Oynatılacak Kanal",
-        options=["Seçiniz..."] + play_options,
-        index=default_index,
-        key="play_select_auto"
-    )
-
-    if play_name_display != "Seçiniz...":
-        selected_info = play_url_map.get(play_name_display)
-        if selected_info:
-            current = st.session_state.get("play_channel")
-            if not current or current.get("url") != selected_info["url"] or current.get("name") != selected_info["name"]:
-                st.session_state.play_channel = selected_info
-                st.rerun()
-    else:
-        if st.session_state.play_channel:
-            st.session_state.play_channel = None
-            st.rerun()
-
-    if st.session_state.play_channel:
-        pc = st.session_state.play_channel
-        pcol1, pcol2 = st.columns([1, 4])
-        with pcol1:
-            if pc.get("logo"):
-                try:
-                    st.image(pc["logo"], width=120)
-                except Exception:
-                    pass
-            st.markdown(
-                f"<span style='color:#94a3b8;'>Grup:</span> "
-                f"<span style='color:#f1f5f9;font-weight:600;'>{pc.get('group', '')}</span>",
-                unsafe_allow_html=True,
-            )
-            if "VPN" in pc.get("durum", ""):
-                st.warning("🌍 Bölge Kısıtlaması (VPN gerekebilir).")
-            elif "CORS" in pc.get("durum", ""):
-                st.info("⚠️ CORS Kısıtlı — Yerel proxy devrede.")
-            
-            st.caption("📋 Akış URL:")
-            st.code(pc["url"], language=None)
-            
-        with pcol2:
-            st.markdown(f"### ▶ {pc['name']}")
-            components.html(
-                render_live_player(pc["url"], height=380),
-                height=420,
-            )
-
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("⏹ Oynatmayı Durdur", use_container_width=True):
-                st.session_state.play_channel = None
-                st.rerun()
-        with col2:
-            single_m3u = f"#EXTM3U\n#EXTINF:-1,{pc['name']}\n{pc['url']}"
-            st.download_button(
-                "📥 Harici Oynatıcı İçin İndir (M3U)",
-                data=single_m3u,
-                file_name=f"{pc['name']}.m3u",
-                type="secondary",
-                use_container_width=True,
-                help="VLC veya PotPlayer ile doğrudan açmak için indirin.",
-            )
-        st.markdown("---")
-
-    # =====================================================================
-    # KANAL TABLOSU & CANLI DÜZENLEME (DATA EDITOR)
-    # =====================================================================
-    st.markdown("### 📋 Kanal Tablosu & Canlı Düzenleme")
-    st.caption("💡 Tablodaki hücrelere çift tıklayarak kanal adı, grup ve linkleri doğrudan düzenleyebilir veya satır silebilirsiniz.")
-
-    display_cols = [c for c in ["Durum", "Grup", "Kanal Adı", "URL", "Tür"] if c in df_display.columns]
-    table_df = df_display[display_cols] if display_cols else df_display
-
-    edited_df = st.data_editor(
-        table_df,
-        use_container_width=True,
-        hide_index=True,
-        height=TABLE_HEIGHT,
-        num_rows="dynamic",
-        disabled=["Durum", "Tür"],
-        key="channel_data_editor",
-        column_config={
-            "URL": st.column_config.TextColumn("URL", width="large"),
-            "Tür": st.column_config.TextColumn("Tür", width="small"),
-            "Durum": st.column_config.TextColumn("Durum", width="small"),
-            "Grup": st.column_config.TextColumn("Grup", width="medium"),
-            "Kanal Adı": st.column_config.TextColumn("Kanal Adı", width="medium"),
-        },
-    )
-
-    # Değişiklikleri ana state'e senkronize etme butonu
-    if st.button("💾 Tablodaki Değişiklikleri Kaydet", use_container_width=True):
-        # Düzenlenen veriyi ana state ile birleştir
-        st.session_state.data = edited_df
-        st.success("✅ Kanal tablosundaki tüm düzenlemeler kaydedildi!")
-        time.sleep(1)
-        st.rerun()
-
-    # =====================================================================
-    # 🌍 YURT DIŞI & VPN ÇÖZÜM REHBERİ
-    # =====================================================================
-    with st.expander("🌍 Yurt Dışı & Bölgesel Kısıtlamalı (VPN) Kanallar İçin Çözüm Rehberi"):
-        st.markdown("""
-        #### Neden Bazı Kanallar Açılmaz veya Hata Verir?
-        1. **Coğrafi / Ülke Kilidi (Geo-Block / HTTP 403-451):** Birçok yayıncı yalnızca belirli ülkelerin IP adreslerine izin verir (Örn: Almanya, İngiltere, ABD).
-        2. **İnternet Servis Sağlayıcı (ISS) Engeli:** Türkiye'deki bazı servis sağlayıcılar IPTV sunucu IP'lerini filtreleyebilir.
-        3. **Tarayıcı / User-Agent Koruması:** Sunucular standart web tarayıcılarını engeller ve sadece IPTV oynatıcılarına (VLC, TiviMate, Kodi) izin verir.
-
-        ---
-        #### Bu Sitede Sağlanan Çözümler:
-        * **1. Çözüm (Cihaz / User-Agent Profili):** Sol menüdeki *'🌍 Yurt Dışı & VPN Çözümleri'* bölümünden profili **TiviMate** veya **VLC** olarak değiştirin. Çoğu kanal tarayıcı engelini hemen aşacaktır.
-        * **2. Çözüm (Upstream Proxy Tüneli):** Bilgisayarınızda çalışan bir VPN istemciniz veya yurt dışı HTTP/SOCKS proxy'niz varsa adresini girin (örn: `http://127.0.0.1:10808`). Bu sitedeki tüm taramalar ve yerel proxy doğrudan o tünelden geçecektir.
-        * **3. Çözüm (Smart TV / VPN Köprüsü):** Smart TV'nize VPN kuramıyorsanız, yukarıdaki *'🌍 Smart TV / VPN Köprüsü M3U'* sekmesindeki dosyayı indirin veya yerel linki TV'nize girin. TV'niz bu bilgisayar üzerinden yayınları çeker!
-        * **4. Çözüm (Ücretsiz VPN Tavsiyesi):** Ücretsiz ve hızlı çözüm için bilgisayarınıza **Cloudflare WARP (1.1.1.1)** veya **ProtonVPN Free** kurabilirsiniz.
-        """)
+        with v_col_guide:
+            st.markdown("#### 📘 Yurt Dışı Akışları Çözüm Rehberi")
+            st.markdown("""
+            * **1. Cihaz Profili Değiştirme:** Yabancı IPTV sunucuları çoğunlukla Google Chrome gibi tarayıcıları 403 Forbidden ile engeller. Soldaki menüden **TiviMate** veya **VLC** seçerek bu engeli anında aşabilirsiniz.
+            * **2. Upstream Proxy ile Tünelleme:** Bilgisayarınızda çalışan bir VPN istemciniz (v2ray, xray, sing-box, clash vb.) varsa, adresini (örn: `http://127.0.0.1:10808`) soldaki kutuya girin. Tarayıcı ve yerel proxy tüm istekleri bu tünel üzerinden iletir.
+            * **3. Smart TV VPN Köprüsü:** Smart TV'nize VPN kuramıyorsanız, **'📤 Dışa Aktar & Paylaş'** sekmesinden *VPN Köprüsü M3U* dosyasını TV'nize yükleyin. TV akışları bu bilgisayar üzerinden izler.
+            * **4. Ücretsiz VPN Seçenekleri:** Hızlı ve ücretsiz tünelleme için bilgisayarınıza **Cloudflare WARP (1.1.1.1)** veya **ProtonVPN Free** kurabilirsiniz.
+            """)
 
 else:
     st.markdown(
-        "<div class='empty-state fade-in'>"
-        f"<div class='empty-state__icon'>{PAGE_ICON}</div>"
-        f"<h2>{PAGE_TITLE}</h2>"
-        "<p>Sol menüden bir M3U linki yapıştırın veya dosya yükleyin.</p>"
-        "</div>",
+        f"""
+        <div class='empty-state fade-in'>
+            <div class='empty-state__icon'>{PAGE_ICON}</div>
+            <h2>{PAGE_TITLE}</h2>
+            <p>M3U çalma listenizi yükleyin, düzenleyin, sağlık kontrolü yapın veya canlı izleyin.</p>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
+
+    card_c1, card_c2 = st.columns(2)
+    with card_c1:
+        st.markdown("##### 🌐 M3U URL ile Başlat")
+        quick_url = st.text_input("M3U Bağlantısı:", placeholder="https://example.com/playlist.m3u", key="quick_c_url")
+        quick_tr = st.checkbox("🇹🇷 Sadece TR Kanalları", value=DEFAULT_TR_FILTER, key="quick_c_tr")
+        if st.button("🚀 Listeyi İndir ve Aç", use_container_width=True, type="primary", key="quick_c_btn"):
+            if quick_url:
+                with st.spinner("İndiriliyor..."):
+                    try:
+                        active_ua = USER_AGENT_PROFILES.get(st.session_state.selected_ua_profile, USER_AGENT)
+                        lines = network_utils.fetch_m3u_source(
+                            quick_url,
+                            user_agent=active_ua,
+                            timeout=REQUEST_TIMEOUT,
+                            disable_ssl_verify=DISABLE_SSL_VERIFY,
+                            proxy_url=st.session_state.upstream_proxy or None,
+                        )
+                        raw = parse_m3u_lines(lines)
+                        filtered = filter_channels(raw, quick_tr)
+                        if filtered:
+                            st.session_state.data = _ensure_channel_columns(pd.DataFrame(filtered))
+                            if quick_url not in st.session_state.recent_urls:
+                                st.session_state.recent_urls.insert(0, quick_url)
+                            st.rerun()
+                        else:
+                            st.warning("Kanal bulunamadı.")
+                    except Exception as e:
+                        st.error(f"Hata: {e}")
+            else:
+                st.warning("Lütfen bir link girin.")
+
+    with card_c2:
+        st.markdown("##### 📂 Dosya Yükleyerek Başlat")
+        center_file = st.file_uploader("M3U / M3U8 Dosyası Bırakın", type=["m3u", "m3u8"], key="quick_c_file")
+        if center_file:
+            source_lines = io.StringIO(center_file.getvalue().decode("utf-8", errors="ignore")).readlines()
+            raw = parse_m3u_lines(source_lines)
+            filtered = filter_channels(raw, DEFAULT_TR_FILTER)
+            if filtered:
+                st.session_state.data = _ensure_channel_columns(pd.DataFrame(filtered))
+                st.rerun()
 
 # --- Footer ---
 st.markdown("---")
@@ -1090,3 +1105,4 @@ st.markdown(
     "</div>",
     unsafe_allow_html=True,
 )
+
