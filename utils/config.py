@@ -1,6 +1,36 @@
 # M3U Editör Pro - Yapılandırma Dosyası
 # Bu dosyayı düzenleyerek uygulamanın davranışını özelleştirebilirsiniz
 
+import os
+from pathlib import Path
+
+from utils import __version__
+
+
+def load_env(path=None):
+    """Load simple KEY=value entries; process environment takes precedence."""
+    path = Path(path) if path else Path.cwd() / ".env"
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8-sig").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                key = key.strip()
+                if key.replace("_", "").isalnum():
+                    os.environ.setdefault(key, value.strip().strip("\"'"))
+
+
+def env_bool(key, default):
+    value = os.environ.get(key)
+    if value is None:
+        return default
+    if value.lower() not in ("true", "false", "1", "0"):
+        raise ValueError(f"{key}: true veya false olmalı.")
+    return value.lower() in ("true", "1")
+
+
+load_env()
+
 # === GENEL AYARLAR ===
 
 # Streamlit sayfa başlığı
@@ -9,14 +39,33 @@ PAGE_TITLE = "M3U Editör Pro (Web)"
 # Sayfa ikonu (emoji)
 PAGE_ICON = "📺"
 
+# The launcher applies these native widget colors for installed packages too.
+# Keep the repository's .streamlit/config.toml aligned for direct streamlit run.
+UI_THEME = {
+    "base": "dark",
+    "primaryColor": "#69A7FF",
+    "backgroundColor": "#0D1017",
+    "secondaryBackgroundColor": "#171C27",
+    "textColor": "#E8ECF4",
+    "font": "sans serif",
+}
+
 # === NETWORK & PROXY AYARLARI ===
 
 # URL istekleri için zaman aşımı süresi (saniye)
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "30"))
 
 # SSL sertifika doğrulamasını devre dışı bırak (güvenilmeyen kaynaklar için)
 # ⚠️ Güvenlik riski: Sadece güvendiğiniz kaynaklar için True yapın
-DISABLE_SSL_VERIFY = True
+DISABLE_SSL_VERIFY = not env_bool("ENABLE_SSL_VERIFY", True)
+ALLOW_PRIVATE_NETWORKS = env_bool("ALLOW_PRIVATE_NETWORKS", False)
+PROXY_BIND_HOST = "0.0.0.0" if env_bool("ENABLE_LAN_SHARING", False) else "127.0.0.1"
+PROXY_PUBLIC_BASE_URL = os.environ.get("PROXY_PUBLIC_BASE_URL", "").rstrip("/")
+PROXY_PORT = int(os.environ.get("PROXY_PORT", "8502"))
+PROXY_ALLOWED_ORIGIN = os.environ.get("PROXY_ALLOWED_ORIGIN", "")
+ENABLE_VISITOR_COUNTER = env_bool("ENABLE_VISITOR_COUNTER", True)
+ENABLE_LIVE_PLAYER = env_bool("ENABLE_LIVE_PLAYER", True)
+ENABLE_URL_HEALTH_CHECK = env_bool("ENABLE_URL_HEALTH_CHECK", True)
 
 # Varsayılan User-Agent
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -33,20 +82,15 @@ USER_AGENT_PROFILES = {
 }
 
 # Varsayılan Upstream Proxy (örn: 'http://127.0.0.1:10808' veya boş)
-DEFAULT_UPSTREAM_PROXY = ""
+DEFAULT_UPSTREAM_PROXY = os.environ.get("UPSTREAM_PROXY", "")
 
 # === FİLTRELEME AYARLARI ===
 
 # TR kanal tespiti için anahtar kelimeler
-TR_KEYWORDS = [
-    "TR", "TURK", "TÜRK", 
-    "TURKIYE", "TÜRKİYE", 
-    "YERLI", "ULUSAL", 
-    "ISTANBUL"
-]
+TR_KEYWORDS = ["TR", "TURK", "TÜRK", "TURKIYE", "TÜRKİYE", "YERLI", "ULUSAL", "ISTANBUL"]
 
 # Varsayılan olarak TR filtresi aktif mi?
-DEFAULT_TR_FILTER = True
+DEFAULT_TR_FILTER = env_bool("DEFAULT_TR_FILTER", True)
 
 # === TABLO & DÜZENLEME AYARLARI ===
 
@@ -61,7 +105,10 @@ DEFAULT_EXPORT_FILENAME = "iptv_listesi"
 # === GELİŞMİŞ AYARLAR ===
 
 # Maksimum dosya boyutu (MB, dosya yükleme için)
-MAX_FILE_SIZE_MB = 50
+MAX_FILE_SIZE_MB = int(os.environ.get("MAX_FILE_SIZE_MB", "50"))
+MAX_MANIFEST_BYTES = 2 * 1024 * 1024
+if MAX_FILE_SIZE_MB <= 0 or REQUEST_TIMEOUT <= 0:
+    raise ValueError("Dosya boyutu ve zaman aşımı pozitif olmalı.")
 
 # === URL SAĞLIK KONTROLÜ ===
 
@@ -75,5 +122,4 @@ HEALTH_CHECK_TIMEOUT = 3
 HEALTH_CHECK_MAX_CHANNELS = 50
 
 # === UYGULAMA VERSİYONU ===
-APP_VERSION = "2.1.0"
-
+APP_VERSION = __version__

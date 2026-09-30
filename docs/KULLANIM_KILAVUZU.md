@@ -1,122 +1,46 @@
-# M3U Editör Pro - Kullanım Kılavuzu
+# Kullanım kılavuzu
 
-## İçindekiler
-1. [Giriş](#giriş)
-2. [Hızlı Başlangıç](#hızlı-başlangıç)
-3. [Özellikler](#özellikler)
-4. [Detaylı Kullanım](#detaylı-kullanım)
-5. [Sık Sorulan Sorular](#sık-sorulan-sorular)
+[Kurulum](../QUICKSTART.md) · [Dağıtım](DEPLOYMENT.md)
 
-## Giriş
+## Liste yükleme
 
-M3U Editör Pro, IPTV playlist dosyalarını yönetmek için geliştirilmiş modern bir web uygulamasıdır.
+Sol menüde URL girin veya dosya seçin, TR filtresini seçip **Listeyi Çek ve Tara** düğmesine basın.
+Açılış kartları aynı doğrulama kurallarını kullanır. Boş/hatalı kaynak mevcut listeyi silmez.
+URL HTTP/HTTPS olmalı; özel ağ kaynağı varsayılan olarak engellenir. Dosya sınırı 50 MB'dır.
 
-## Hızlı Başlangıç
+## Kanallar & Düzenle
 
-### 1. Uygulamayı Başlatma
+Sol menüden grup/tür/durum filtreleyin, sekmede kanal veya grup arayın.
+Tabloda ad, grup ve URL düzenlenebilir; durum/tür hesaplanır. Dinamik satırlar eklenip silinebilir.
+**Tablodaki Düzenlemeleri Listeye Kaydet** yalnızca görünür satırlardaki işlemleri uygular.
+Görünmeyen kanallar, logo ve EPG bilgileri korunur. Geçersiz URL veya boş ad kayıt işlemini durdurur.
+URL değişince eski sağlık sonucu sıfırlanır. Filtre değişmeden kaydedilmemiş değişikliklerinizi önce kaydedin.
 
-Proje kök dizininden:
-```bash
-streamlit run src/app.py
-```
+**Sağlık Kontrolü** seçilen kapsam ve limite göre HEAD/kısa GET denemesi yapar.
+Aktif, yetki gerekli, VPN gerekebilir, zaman aşımı gibi sonuçlar oynatma garantisi değildir.
+**Ölüleri Temizle** ve **Sadece Çalışanlar** ana listeye uygulanır; silme öncesi M3U yedeği indirin.
 
-Veya src dizinindeyseniz:
-```bash
-cd src
-streamlit run app.py
-```
+## Canlı Oynatıcı
 
-### 2. M3U Listesi Yükleme
+Kanal seçildiğinde HLS/MPEG-TS oynatma başlar. Varsayılan yerel proxy,
+cihaz User-Agent'ı ve sağlayıcı Referer ayarını kullanır. Üçüncü taraf proxy otomatik denenmez.
+Doğrudan oynatma seçeneği sağlayıcı CORS/HTTPS kurallarına bağlıdır.
+Uzak sunucudaki proxy için [HTTPS dağıtım ayarları](DEPLOYMENT.md) gerekir.
+DRM koruması ve tarayıcının desteklemediği codec'ler harici oynatıcı gerektirebilir.
 
-**URL ile:**
-- Sol menüden "🌐 Linkten Yükle" seçin
-- M3U linkini yapıştırın
-- "Listeyi Çek ve Tara" butonuna tıklayın
+## Dışa Aktar & Paylaş
 
-**Dosya ile:**
-- Sol menüden "📂 Dosya Yükle" seçin
-- M3U dosyasını sürükle-bırak yapın
+Önce görünen/tüm kanallar kapsamını ve M3U/M3U8/CSV/JSON/TXT/VPN köprüsü formatını seçin.
+**İndirme Dosyasını Hazırla**, ardından indirme düğmesini kullanın.
+Veri/format değişirse dosyayı yeniden hazırlayın. M3U8 dosyası UTF-8 M3U listesidir.
 
-### 3. Kanalları Düzenleme
-- Arama kutusunu kullanarak kanal arayın
-- İstediğiniz kanalları seçin
-- Tabloda doğrudan düzenleme yapın
+**Seçilen Liste İçin Yerel Link Hazırla** oturuma özel bir snapshot yayımlar.
+TV için LAN paylaşımı açılmalıdır; linkteki anahtar gizlidir. Düzenlemeden sonra linki yeniden hazırlayın.
+**Harici Paylaşım** listeyi seçilen HTTPS paste servisine gönderir. URL içindeki kullanıcı bilgileri/token'lar da
+aktarılır; onay kutusu seçilmeden gönderim yapılmaz. Harici linkler ayrı snapshot'lardır.
 
-### 4. Export
-- Seçili kanalları veya tüm listeyi indirin
-- M3U, JSON veya CSV formatında export edin
+## VPN ve profil
 
-## Özellikler
-
-### Filtreleme
-- TR filtresi ile Türk kanallarını otomatik tespit
-- Grup bazlı filtreleme
-- Gelişmiş arama
-
-### Düzenleme
-- Checkbox ile kolay seçim
-- Canlı tablo düzenleme
-- Toplu işlemler
-
-### Export
-- M3U formatında standart export
-- JSON ve CSV desteği
-- Seçili veya tüm liste
-
-### İstatistikler
-- Toplam kanal sayısı
-- Seçilen kanal sayısı
-- Grup sayısı
-- Ziyaretçi istatistikleri
-
-## Detaylı Kullanım
-
-### TR Filtresi
-TR filtresi aşağıdaki anahtar kelimeleri arar:
-- TR, TURK, TÜRK
-- TURKIYE, TÜRKİYE
-- YERLI, ULUSAL
-- ISTANBUL
-
-### Tema Değiştirme
-Sol menüden "Açık" veya "Koyu" tema seçebilirsiniz.
-
-### Sıralama
-- Grup, Kanal Adı veya URL'ye göre sıralama
-- A→Z veya Z→A yönü seçimi
-
-### URL Sağlık Kontrolü
-- Tüm kanalların URL'lerini test eder
-- Çalışmayan linkleri tespit eder
-- Durum sütununda sonuçları gösterir
-
-### Canlı Oynatıcı
-- Herhangi bir kanalı test edebilirsiniz
-- HLS.js desteği ile geniş format uyumluluğu
-- Tam ekran oynatma desteği
-
-## Sık Sorulan Sorular
-
-### Uygulama çok yavaş çalışıyor
-- Çok büyük listeler (10,000+ kanal) performans sorunlarına yol açabilir
-- Filtreleme kullanarak liste boyutunu küçültün
-
-### SSL hatası alıyorum
-- Uygulama SSL doğrulamasını bypass eder
-- Sadece güvendiğiniz kaynaklardan liste yükleyin
-
-### Kanallar oynatılmıyor
-- URL'lerin geçerli olduğundan emin olun
-- URL Sağlık Kontrolü ile test edin
-- Bazı kanallar coğrafi kısıtlamaya sahip olabilir
-
-### Verilerim kaydediliyor mu?
-- Hayır, tüm işlemler tarayıcınızda gerçekleşir
-- Export etmediğiniz sürece veriler kalıcı değildir
-- Ziyaretçi sayacı dışında hiçbir veri sunucuda saklanmaz
-
-## Destek
-
-Sorularınız için:
-- GitHub Issues: [github.com/yourusername/m3uedit/issues](https://github.com/yourusername/m3uedit/issues)
-- E-posta: support@example.com
+HTTP/HTTPS upstream proxy adresi, cihaz profili ve sağlayıcının Referer başlığını ayarlayın.
+SOCKS doğrudan desteklenmez; istemcinizin HTTP portunu kullanın. Proxy adresi girmek VPN hizmeti sağlamaz.
+Ayarlar yalnızca sizin oturumunuza uygulanır.

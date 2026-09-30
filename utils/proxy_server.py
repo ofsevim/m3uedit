@@ -1,320 +1,361 @@
+"""Authenticated streaming gateway with isolated per-session state."""
+
+import atexit
 import http.server
-import socketserver
-import urllib.request
-import urllib.parse
-import threading
-import socket
-import logging
-import ssl
+import os
 import re
+import secrets
+import socketserver
+import tempfile
+import threading
+import urllib.error
+import urllib.parse
+import urllib.request
+import weakref
+from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
-# Config'den tarayıcı User-Agent'ını çek, hata durumunda güvenli bir varsayılan kullan
-try:
-    from utils.config import USER_AGENT
-except ImportError:
-    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-
-proxy_ssl_ctx = ssl.create_default_context()
-proxy_ssl_ctx.check_hostname = False
-proxy_ssl_ctx.verify_mode = ssl.CERT_NONE
+from utils import config, network
+from utils.security import validate_proxy, validate_target, validate_url
 
 CHUNK_SIZE = 64 * 1024
+_gateway = None
+_gateway_lock = threading.RLock()
 
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.sessions = weakref.WeakValueDictionary()
+        self.slots = threading.BoundedSemaphore(32)
+
+    def process_request(self, request, client_address):
+        if not self.slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        request.settimeout(15)
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self.slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.slots.release()
+
 
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
-    def log_message(self, format, *args):
+    def log_message(self, *args):
+        # URLs include provider credentials and session capability tokens.
         pass
 
-    def do_GET(self):
-        self._handle_request(send_body=True)
-
-    def do_HEAD(self):
-        self._handle_request(send_body=False)
-
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
+    def _cors(self):
+        origin = self.headers.get("Origin", "")
+        parsed = urllib.parse.urlsplit(origin)
+        if origin and (
+            origin == config.PROXY_ALLOWED_ORIGIN
+            or (parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1"))
+        ):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "*")
-        self.send_header("Access-Control-Max-Age", "86400")
+        self.send_header("Access-Control-Allow-Headers", "Range, Accept")
+        self.send_header(
+            "Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges"
+        )
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Content-Type-Options", "nosniff")
+
+    def _error(self, status):
+        self.send_response(status)
+        self._cors()
+        self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def _handle_request(self, send_body=True):
-        parsed_path = urllib.parse.urlparse(self.path)
-        
-        # ── 🆕 YEREL ROTA: /playlist.m3u, /playlist veya /proxied_playlist.m3u ──
-        # Bu rota, kullanıcının oluşturduğu M3U veya VPN Köprüsü M3U listesini yerel proxy üzerinden sunar.
-        if parsed_path.path in ("/playlist.m3u", "/playlist", "/proxied_playlist.m3u"):
-            import os
-            proxy_instance = getattr(self.server, "proxy_instance", None)
-            target_attr = "proxied_playlist_file" if "proxied" in parsed_path.path else "playlist_file"
-            file_path = getattr(proxy_instance, target_attr, None) if proxy_instance else None
-            out_filename = "proxied_playlist.m3u" if "proxied" in parsed_path.path else "playlist.m3u"
-            
-            if not file_path or not os.path.exists(file_path):
-                self.send_response(404)
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                if send_body:
-                    self.wfile.write("Henüz bir çalma listesi oluşturulmadı.".encode("utf-8"))
-                return
+    def _authorize(self):
+        if len(self.path) > 16384:
+            self._error(414)
+            return None
+        parsed = urllib.parse.urlsplit(self.path)
+        query = urllib.parse.parse_qs(parsed.query, max_num_fields=10)
+        token = query.get("token", [""])[0]
+        with _gateway_lock:
+            instance = self.server.sessions.get(token)
+        if not instance or not secrets.compare_digest(token, instance.token):
+            self._error(403)
+            return None
+        self.instance = instance
+        return parsed, query
 
-            try:
-                file_size = os.path.getsize(file_path)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/x-mpegurl; charset=utf-8")
-                self.send_header("Content-Disposition", f'attachment; filename="{out_filename}"')
-                self.send_header("Content-Length", str(file_size))
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                
-                if send_body:
-                    with open(file_path, "rb") as f:
-                        while True:
-                            chunk = f.read(64 * 1024)
-                            if not chunk:
-                                break
-                            self.wfile.write(chunk)
-            except OSError as e:
-                logger.error(f"Error serving playlist file: {e}")
-                self.send_response(500)
-                self.end_headers()
-            return
+    def do_OPTIONS(self):
+        if self._authorize():
+            self._error(204)
 
-        if parsed_path.path != "/proxy":
-            self.send_response(404)
-            self.end_headers()
-            return
+    def do_HEAD(self):
+        self._handle_request(False)
 
-        query = urllib.parse.parse_qs(parsed_path.query)
-        target_url = query.get("url", [None])[0]
-        
-        # 🛡️ GÜVENLİK FİXİ: SSRF ve LFI (Local File Inclusion) önleme
-        # Sadece http ve https protokollerine izin ver (örn. file:// engellenir)
-        if not target_url or not target_url.startswith(("http://", "https://")):
-            self.send_response(400)
-            self.end_headers()
-            return
+    def do_GET(self):
+        self._handle_request(True)
 
+    def _handle_request(self, send_body):
+        headers_sent = False
         try:
-            # 🌐 İYİLEŞTİRME: Config veya dinamik proxy yapılandırmasından gelen parametreleri kullan
-            proxy_instance = getattr(self.server, "proxy_instance", None)
-            ua = getattr(proxy_instance, "custom_user_agent", None) or USER_AGENT
-            custom_ref = getattr(proxy_instance, "custom_referer", None)
-            upstream = getattr(proxy_instance, "upstream_proxy", None)
-
-            headers = {"User-Agent": ua}
-            for h in ("Referer", "Range", "Accept"):
-                val = self.headers.get(h)
-                if val:
-                    headers[h] = val
-            if custom_ref and "Referer" not in headers:
-                headers["Referer"] = custom_ref
-
-            req = urllib.request.Request(target_url, headers=headers)
-
-            def _open():
-                if upstream:
-                    p_handler = urllib.request.ProxyHandler({"http": upstream, "https": upstream})
-                    s_handler = urllib.request.HTTPSHandler(context=proxy_ssl_ctx)
-                    return urllib.request.build_opener(p_handler, s_handler).open(req, timeout=15)
-                return urllib.request.urlopen(req, timeout=15, context=proxy_ssl_ctx)
-
-            with _open() as resp:
-                content_type = resp.getheader("Content-Type", "application/octet-stream")
-                status_code = resp.status
-                final_url = resp.url
-
-
-                is_m3u8 = (
-                    "mpegurl" in content_type.lower()
-                    or target_url.lower().split("?")[0].endswith(".m3u8")
-                    or final_url.lower().split("?")[0].endswith(".m3u8")
+            authorized = self._authorize()
+            if not authorized:
+                return
+            parsed, query = authorized
+            instance = self.instance
+            if parsed.path in ("/playlist", "/playlist.m3u", "/proxied_playlist.m3u"):
+                filename = (
+                    instance.proxied_playlist_file
+                    if "proxied" in parsed.path
+                    else instance.playlist_file
                 )
-
-                # ── CORS header'ları ──
-                cors_headers = {
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Expose-Headers": "*",
-                    "Cache-Control": "no-cache",
-                }
-
-                if is_m3u8:
-                    # M3U8 → tamamen oku, yeniden yaz
-                    content = resp.read()
-                    content = self.rewrite_m3u8(content, final_url)
-                    content_type = "application/vnd.apple.mpegurl"
-
-                    self.send_response(status_code)
-                    self.send_header("Content-Type", content_type)
-                    self.send_header("Content-Length", str(len(content)))
-                    for k, v in cors_headers.items():
-                        self.send_header(k, v)
-                    self.end_headers()
-                    if send_body:
-                        self.wfile.write(content)
-                else:
-                    # Binary/TS → stream et
-                    self.send_response(status_code)
-                    self.send_header("Content-Type", content_type)
-
-                    cl = resp.getheader("Content-Length")
-                    if cl:
-                        self.send_header("Content-Length", cl)
-                    cr = resp.getheader("Content-Range")
-                    if cr:
-                        self.send_header("Content-Range", cr)
-                    ar = resp.getheader("Accept-Ranges")
-                    if ar:
-                        self.send_header("Accept-Ranges", ar)
-
-                    for k, v in cors_headers.items():
-                        self.send_header(k, v)
-                    self.end_headers()
-
-                    if send_body:
-                        while True:
-                            chunk = resp.read(CHUNK_SIZE)
-                            if not chunk:
-                                break
+                # Windows does not permit replacing an open file: serialize reads and writes.
+                try:
+                    with instance.lock, open(filename, "rb") as stream:
+                        body = stream.read()
+                except FileNotFoundError:
+                    self._error(404)
+                    return
+                self.send_response(200)
+                self._cors()
+                self.send_header("Content-Type", "application/x-mpegurl; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                headers_sent = True
+                if send_body:
+                    self.wfile.write(body)
+                return
+            if parsed.path != "/proxy":
+                self._error(404)
+                return
+            target = query.get("url", [""])[0]
+            validate_target(target, allow_private=instance.allow_private_networks)
+            with instance.lock:
+                ua, referer, upstream = (
+                    instance.custom_user_agent,
+                    instance.custom_referer,
+                    instance.upstream_proxy,
+                )
+            headers = {"User-Agent": ua or config.USER_AGENT}
+            for key in ("Range", "Accept"):
+                if self.headers.get(key):
+                    headers[key] = self.headers[key]
+            # Use the provider referer, never the application's own iframe origin.
+            if referer:
+                headers["Referer"] = referer
+            request = urllib.request.Request(
+                target, headers=headers, method="GET" if send_body else "HEAD"
+            )
+            with network.open_url(
+                request,
+                timeout=config.REQUEST_TIMEOUT,
+                proxy_url=upstream,
+                allow_private=instance.allow_private_networks,
+            ) as response:
+                final = response.url
+                content_type = response.getheader("Content-Type", "application/octet-stream")
+                manifest = "mpegurl" in content_type.lower() or urllib.parse.urlsplit(
+                    final
+                ).path.lower().endswith(".m3u8")
+                body = None
+                if manifest and send_body:
+                    body = self.rewrite_m3u8(
+                        network.read_bounded(response, config.MAX_MANIFEST_BYTES), final
+                    )
+                self.send_response(response.status)
+                self._cors()
+                self.send_header(
+                    "Content-Type", "application/vnd.apple.mpegurl" if manifest else content_type
+                )
+                if body is not None:
+                    self.send_header("Content-Length", str(len(body)))
+                elif not manifest:
+                    for key in ("Content-Length", "Content-Range", "Accept-Ranges"):
+                        if response.getheader(key):
+                            self.send_header(key, response.getheader(key))
+                self.end_headers()
+                headers_sent = True
+                if send_body:
+                    if body is not None:
+                        self.wfile.write(body)
+                    else:
+                        while chunk := response.read(CHUNK_SIZE):
                             self.wfile.write(chunk)
-
-        except urllib.error.HTTPError as e:
-            self.send_response(e.code)
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             pass
-        except Exception as e:
-            logger.error(f"Proxy error: {e} for {target_url}")
-            try:
-                self.send_response(502)
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-
-    # ── M3U8 Rewriting ──
+        except urllib.error.HTTPError as exc:
+            exc.close()
+            if not headers_sent:
+                self._error(exc.code)
+        except ValueError:
+            if not headers_sent:
+                self._error(400)
+        except (OSError, urllib.error.URLError):
+            if not headers_sent:
+                self._error(502)
+        except Exception:
+            if not headers_sent:
+                self._error(502)
 
     _uri_re = re.compile(r'(URI\s*=\s*")([^"]+)(")', re.IGNORECASE)
 
     def _make_proxy_url(self, url):
-        req_host = self.headers.get("Host") if hasattr(self, "headers") else None
-        if req_host:
-            authority = req_host
-        else:
-            host, port = self.server.server_address
-            if host in ("0.0.0.0", ""):
-                host = "127.0.0.1"
-            authority = f"{host}:{port}"
-        return f"http://{authority}/proxy?url={urllib.parse.quote(url, safe='')}"
+        # Root-relative URLs preserve the trusted browser/TV authority and HTTPS.
+        prefix = (
+            urllib.parse.urlsplit(config.PROXY_PUBLIC_BASE_URL).path.rstrip("/")
+            if config.PROXY_PUBLIC_BASE_URL
+            else ""
+        )
+        return f"{prefix}/proxy?token={self.instance.token}&url={urllib.parse.quote(url, safe='')}"
 
     def _resolve_url(self, base_url, url):
-        if url.startswith(("http://", "https://")):
-            return url
         resolved = urllib.parse.urljoin(base_url, url)
-        # Token propagation
-        bp = urllib.parse.urlparse(base_url)
-        rp = urllib.parse.urlparse(resolved)
-        if bp.query and not rp.query:
-            resolved = urllib.parse.urlunparse(rp._replace(query=bp.query))
+        base, target = urllib.parse.urlsplit(base_url), urllib.parse.urlsplit(resolved)
+        # Propagate provider tokens only within the same authority.
+        if base.query and not target.query and base.netloc == target.netloc:
+            resolved = urllib.parse.urlunsplit(target._replace(query=base.query))
+        validate_url(resolved)
         return resolved
 
     def rewrite_m3u8(self, content, base_url):
-        text = content.decode("utf-8", errors="ignore")
-        new_lines = []
-
-        for line in text.splitlines():
-            s = line.strip()
-            if not s:
-                new_lines.append(s)
-            elif s.startswith("#"):
-                def _repl(m, _base=base_url):
-                    u = self._resolve_url(_base, m.group(2))
-                    return f"{m.group(1)}{self._make_proxy_url(u)}{m.group(3)}"
-                new_lines.append(self._uri_re.sub(_repl, s))
-            else:
-                abs_url = self._resolve_url(base_url, s)
-                new_lines.append(self._make_proxy_url(abs_url))
-
-        return "\n".join(new_lines).encode("utf-8")
+        lines = []
+        for line in content.decode("utf-8-sig", errors="replace").splitlines():
+            line = line.strip()
+            if line.startswith("#"):
+                line = self._uri_re.sub(
+                    lambda m: m[1] + self._make_proxy_url(self._resolve_url(base_url, m[2])) + m[3],
+                    line,
+                )
+            elif line:
+                line = self._make_proxy_url(self._resolve_url(base_url, line))
+            lines.append(line)
+        return "\n".join(lines).encode("utf-8")
 
 
 class LocalProxyServer:
-    def __init__(self):
-        self.server = None
-        self.thread = None
-        self.port = None
-        self.upstream_proxy = None
-        self.custom_user_agent = None
-        self.custom_referer = None
-        
-        # Streamlit Cloud'da RAM şişmesini önlemek için çalma listesini diskteki geçici bir dosyada saklarız.
-        # Bu sayede devasa çalma listeleri Python heap belleğinde tutulmaz.
-        import os
-        from utils.visitor_counter import VisitorCounter
-        self.playlist_file = VisitorCounter._resolve_path("temp_playlist.m3u")
-        self.proxied_playlist_file = VisitorCounter._resolve_path("temp_proxied_playlist.m3u")
+    """One session's settings/files; the gateway routes by unguessable token."""
 
-    def set_proxy_config(
-        self,
-        upstream_proxy: str | None = None,
-        custom_user_agent: str | None = None,
-        custom_referer: str | None = None,
-    ):
-        """Upstream proxy, User-Agent ve Referer ayarlarını günceller."""
-        self.upstream_proxy = upstream_proxy.strip() if upstream_proxy and upstream_proxy.strip() else None
-        self.custom_user_agent = custom_user_agent.strip() if custom_user_agent and custom_user_agent.strip() else None
-        self.custom_referer = custom_referer.strip() if custom_referer and custom_referer.strip() else None
+    def __init__(self, *, allow_private_networks=None):
+        self.server = self.thread = self.port = None
+        self.token = secrets.token_urlsafe(32)
+        self.lock = threading.RLock()
+        self.upstream_proxy = self.custom_user_agent = self.custom_referer = None
+        self.allow_private_networks = (
+            config.ALLOW_PRIVATE_NETWORKS
+            if allow_private_networks is None
+            else allow_private_networks
+        )
+        self.directory = tempfile.TemporaryDirectory(prefix="m3uedit-session-")
+        self.playlist_file = str(Path(self.directory.name) / "playlist.m3u")
+        self.proxied_playlist_file = str(Path(self.directory.name) / "proxied_playlist.m3u")
+        self.content_digest = None
+
+    def set_proxy_config(self, upstream_proxy=None, custom_user_agent=None, custom_referer=None):
+        upstream = validate_proxy(upstream_proxy.strip() if upstream_proxy else None)
+        referer = custom_referer.strip() if custom_referer else None
+        if referer:
+            validate_url(referer)
+        ua = custom_user_agent.strip() if custom_user_agent else None
+        if ua and any(ord(c) < 32 or ord(c) == 127 for c in ua):
+            raise ValueError("User-Agent geçersiz karakter içeriyor.")
+        with self.lock:
+            self.upstream_proxy, self.custom_user_agent, self.custom_referer = upstream, ua, referer
 
     def start(self):
-        # 🔄 AĞDAKİ DİĞER CİHAZLARIN ERİŞEBİLMESİ İÇİN:
-        # Sunucuyu "0.0.0.0" adresine bağlayarak, aynı Wi-Fi/Ağdaki Smart TV veya 
-        # telefonların da bu çalma listesine ve proxy'ye erişebilmesini sağlıyoruz.
-        self.server = ThreadingTCPServer(("0.0.0.0", 0), ProxyHandler)
-        self.server.proxy_instance = self
-        self.port = self.server.server_address[1]
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
-        logger.info(f"CORS Proxy on :{self.port}")
-        return self.port
+        global _gateway
+        with _gateway_lock:
+            if self.server:
+                return self.port
+            if _gateway is None:
+                server = ThreadingTCPServer(
+                    (config.PROXY_BIND_HOST, config.PROXY_PORT), ProxyHandler
+                )
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                _gateway = server, thread
+            self.server, self.thread = _gateway
+            self.port = self.server.server_address[1]
+            self.server.sessions[self.token] = self
+            return self.port
 
     def stop(self):
-        if self.server:
-            self.server.shutdown()
-            self.server.server_close()
-            # Geçici dosyaları temizle
-            import os
-            for p in (self.playlist_file, getattr(self, "proxied_playlist_file", None)):
-                if p:
-                    try:
-                        if os.path.exists(p):
-                            os.remove(p)
-                    except OSError:
-                        pass
+        global _gateway
+        with _gateway_lock:
+            if self.server:
+                self.server.sessions.pop(self.token, None)
+                if not self.server.sessions:
+                    self.server.shutdown()
+                    self.server.server_close()
+                    _gateway = None
+                self.server = self.thread = self.port = None
+        with self.lock:
+            self.directory.cleanup()
 
-    def get_proxy_url(self, target_url, host: str = "127.0.0.1"):
-        return f"http://{host}:{self.port}/proxy?url={urllib.parse.quote(target_url, safe='')}"
+    def __del__(self):
+        try:
+            self.stop()
+        except Exception:
+            pass
+
+    def endpoint_url(self, path, *, host="127.0.0.1", public=False):
+        base = (
+            config.PROXY_PUBLIC_BASE_URL
+            if public and config.PROXY_PUBLIC_BASE_URL
+            else f"http://{host}:{self.port}"
+        )
+        return f"{base}/{path.lstrip('/')}?token={self.token}"
+
+    def get_proxy_url(self, target_url, host="127.0.0.1", *, public=False):
+        return f"{self.endpoint_url('proxy', host=host, public=public)}&url={urllib.parse.quote(target_url, safe='')}"
 
     def set_m3u_content(self, content: str, proxied_content: str = ""):
-        """Çalma listesi içeriğini RAM yerine geçici bir dosyaya yazar."""
-        try:
-            with open(self.playlist_file, "w", encoding="utf-8", newline="") as f:
-                f.write(content)
-        except OSError as e:
-            logger.error(f"Failed to write playlist to file: {e}")
-        if proxied_content:
-            try:
-                with open(self.proxied_playlist_file, "w", encoding="utf-8", newline="") as f:
-                    f.write(proxied_content)
-            except OSError as e:
-                logger.error(f"Failed to write proxied playlist to file: {e}")
+        # Digest avoids repeated disk writes on Streamlit reruns.
+        import hashlib
+
+        if any(
+            len(text.encode("utf-8")) > config.MAX_FILE_SIZE_MB * 1024 * 1024
+            for text in (content, proxied_content)
+        ):
+            raise ValueError("Dosya boyutu sınırı aşıldı.")
+        digest = hashlib.sha256((content + "\0" + proxied_content).encode("utf-8")).digest()
+        with self.lock:
+            if digest == self.content_digest:
+                return
+            for destination, text in (
+                (self.playlist_file, content),
+                (self.proxied_playlist_file, proxied_content),
+            ):
+                with tempfile.NamedTemporaryFile(
+                    mode="w", encoding="utf-8", newline="", dir=self.directory.name, delete=False
+                ) as stream:
+                    staged = stream.name
+                    stream.write(text)
+                try:
+                    os.replace(staged, destination)
+                finally:
+                    if os.path.exists(staged):
+                        os.unlink(staged)
+            self.content_digest = digest
+
+
+def _shutdown_gateway():
+    global _gateway
+    with _gateway_lock:
+        if _gateway:
+            server, _ = _gateway
+            for instance in list(server.sessions.values()):
+                instance.directory.cleanup()
+            server.shutdown()
+            server.server_close()
+            _gateway = None
+
+
+atexit.register(_shutdown_gateway)

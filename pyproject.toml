@@ -1,14 +1,15 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "m3u-editor-pro"
-version = "2.0.0"
+dynamic = ["version"]
 description = "IPTV M3U playlist yönetim aracı"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "M3U Editor Pro Team", email = "support@example.com"}
 ]
@@ -17,30 +18,30 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
     "Topic :: Multimedia :: Video",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
 
 dependencies = [
-    "streamlit>=1.31.0,<2.0.0",
+    "streamlit>=1.52.0,<2.0.0",
     "pandas>=2.0.0,<3.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.4.0",
+    "pytest>=8.0.0,<10.0.0",
+    "ruff>=0.12.0,<1.0.0",
     "black>=23.0.0",
     "flake8>=6.0.0",
     "mypy>=1.0.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/m3uedit"
-Documentation = "https://github.com/yourusername/m3uedit/tree/main/docs"
-Repository = "https://github.com/yourusername/m3uedit"
-"Bug Tracker" = "https://github.com/yourusername/m3uedit/issues"
+Homepage = "https://github.com/ofsevim/m3uedit"
+Documentation = "https://github.com/ofsevim/m3uedit/tree/main/docs"
+Repository = "https://github.com/ofsevim/m3uedit"
+"Bug Tracker" = "https://github.com/ofsevim/m3uedit/issues"
 
 [tool.black]
 line-length = 100
@@ -71,3 +72,30 @@ python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
+
+[project.scripts]
+m3uedit = "utils.launcher:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "utils.__version__"}
+
+[tool.setuptools]
+py-modules = ["app", "bootstrap"]
+
+[tool.setuptools.packages.find]
+include = ["utils*", "src*", "ui*", "static*"]
+exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+static = ["*.css"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"app.py" = ["E402"]
+"src/app.py" = ["E402"]
