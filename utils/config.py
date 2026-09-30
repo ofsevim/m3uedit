@@ -39,6 +39,17 @@ PAGE_TITLE = "M3U Editör Pro (Web)"
 # Sayfa ikonu (emoji)
 PAGE_ICON = "📺"
 
+# The launcher applies these native widget colors for installed packages too.
+# Keep the repository's .streamlit/config.toml aligned for direct streamlit run.
+UI_THEME = {
+    "base": "dark",
+    "primaryColor": "#69A7FF",
+    "backgroundColor": "#0D1017",
+    "secondaryBackgroundColor": "#171C27",
+    "textColor": "#E8ECF4",
+    "font": "sans serif",
+}
+
 # === NETWORK & PROXY AYARLARI ===
 
 # URL istekleri için zaman aşımı süresi (saniye)

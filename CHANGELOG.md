@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — UI refresh
+
+- Modern dark palette with accessible blue actions and consistent native widgets.
+- New start screen, import cards, workspace summaries and shorter navigation.
+- Grouped export/network views, collapsible player details and mobile sidebar behavior.
+- Apply the native theme through the installed launcher as well as repository configuration.
+
 ## 2.2.0 — 2026-09-30
 
 - [SECURITY] Verified TLS, HTTP(S)/DNS/redirect policy and pinned direct connections.

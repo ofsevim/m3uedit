@@ -42,6 +42,7 @@ def main(argv=None):
         os.environ.get("SERVER_PORT", "8501"),
         "--server.maxUploadSize",
         str(config.MAX_FILE_SIZE_MB),
+        *[arg for key, value in config.UI_THEME.items() for arg in (f"--theme.{key}", value)],
         *extra,
     ]
     return subprocess.call(command)

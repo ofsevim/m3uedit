@@ -91,12 +91,12 @@ def render_player(df_display, get_proxy_server):
             else:
                 st.markdown(f"**Durum:** {pc.get('durum', '❔')}")
 
-            st.caption("📋 Akış URL:")
-            st.code(pc["url"], language=None)
-
             proxy_srv = get_proxy_server()
-            st.caption("🛡️ Yerel Proxy URL:")
-            st.code(proxy_srv.get_proxy_url(pc["url"], public=True), language=None)
+            with st.expander("Bağlantı ayrıntıları"):
+                st.caption("Akış adresi")
+                st.code(pc["url"], language=None)
+                st.caption("Yerel proxy adresi")
+                st.code(proxy_srv.get_proxy_url(pc["url"], public=True), language=None)
 
             b_stop, b_dl = st.columns(2)
             with b_stop:
@@ -134,10 +134,10 @@ def render_player(df_display, get_proxy_server):
                 st.info("Canlı oynatıcı yapılandırmada kapalı.")
         else:
             st.markdown(
-                "<div style='height:440px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(11,18,32,0.7);border-radius:14px;border:1px dashed rgba(255,255,255,0.12);'>"
-                "<span style='font-size:3.5rem;'>📺</span>"
-                "<p style='color:#94a3b8;margin-top:12px;font-weight:600;'>Henüz oynatılan kanal yok</p>"
-                "<p style='color:#64748b;font-size:0.85rem;'>Sol menüden bir kanal seçtiğinizde burada canlı izleyebilirsiniz.</p>"
+                "<div class='player-placeholder'>"
+                "<span class='player-placeholder__icon' aria-hidden='true'>▷</span>"
+                "<h3>İzlemeye hazır.</h3>"
+                "<p>Kanal seçiminizi yapın.<br>Canlı yayın burada başlayacak.</p>"
                 "</div>",
                 unsafe_allow_html=True,
             )

@@ -33,7 +33,7 @@ st.set_page_config(
     page_title=PAGE_TITLE,
     layout="wide",
     page_icon=PAGE_ICON,
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 # --- YARDIMCI MODÜLLER ---
@@ -127,10 +127,10 @@ if vc is not None and "visited" not in st.session_state:
 with st.sidebar:
     st.markdown(
         "<div class='sidebar-brand'>"
-        "<span class='sidebar-brand__icon'>📺</span>"
+        "<span class='sidebar-brand__icon' aria-hidden='true'>▤</span>"
         "<div>"
         "<span class='sidebar-brand__title'>M3U Editör Pro</span>"
-        "<span class='sidebar-brand__subtitle'>Yükle, filtrele, oynat</span>"
+        "<span class='sidebar-brand__subtitle'>Kanal çalışma alanınız</span>"
         "</div>"
         "</div>",
         unsafe_allow_html=True,
@@ -139,12 +139,12 @@ with st.sidebar:
     # Ağ & Proxy mini durum göstergesi
     if st.session_state.upstream_proxy:
         st.markdown(
-            "<div style='margin:8px 0;padding:4px 8px;border-radius:8px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);font-size:0.78rem;color:#86efac;'>🟢 <b>VPN/Proxy Aktif</b></div>",
+            "<div class='connection-status connection-status--active'><span class='status-dot'></span>Proxy yapılandırıldı</div>",
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
-            "<div style='margin:8px 0;padding:4px 8px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);font-size:0.78rem;color:#94a3b8;'>⚪ <b>Doğrudan Bağlantı</b></div>",
+            "<div class='connection-status'><span class='status-dot'></span>Doğrudan bağlantı</div>",
             unsafe_allow_html=True,
         )
 
@@ -157,7 +157,7 @@ with st.sidebar:
     selected_types = []
     selected_statuses = []
     if not st.session_state.data.empty:
-        st.markdown("#### ⚙️ Filtre")
+        st.markdown("#### Liste filtreleri")
         try:
             group_options = sorted(st.session_state.data["Grup"].astype(str).dropna().unique())
         except Exception:
@@ -183,17 +183,17 @@ with st.sidebar:
             )
 
     # İstatistikler
-    st.markdown("---")
-
     if vc is not None:
         stats = vc.get_stats()
-        st.markdown(f"**👥 Toplam Ziyaret:** {stats['total_visits']}")
-        st.markdown(f"**👤 Tekil Ziyaretçi:** {stats['unique_visitors']}")
         try:
             last_visit = datetime.fromisoformat(stats["last_visit"]).strftime("%d.%m.%Y %H:%M")
         except (ValueError, KeyError):
             last_visit = "—"
-        st.caption(f"Son Ziyaret: {last_visit}")
+        with st.expander("Kullanım istatistikleri"):
+            st.caption(
+                f"{stats['total_visits']} ziyaret · {stats['unique_visitors']} tekil ziyaretçi"
+            )
+            st.caption(f"Son ziyaret: {last_visit}")
 
 # =====================================================================
 # ANA EKRAN
@@ -212,9 +212,11 @@ if not st.session_state.data.empty:
 
     # Üst Başlık
     st.markdown(
-        f"""
-        <div class="page-header fade-in">
-            <h1>{PAGE_ICON} {html.escape(PAGE_TITLE)}</h1>
+        """
+        <div class="page-header">
+            <span class="eyebrow">ÇALIŞMA ALANI</span>
+            <h1>Kanal listeniz, kontrolünüzde.</h1>
+            <p>Kanalları düzenleyin, bağlantıları kontrol edin ve listenizi yanınızda götürün.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -224,12 +226,15 @@ if not st.session_state.data.empty:
     group_count = df_display["Grup"].nunique()
     hls_count = int((df_display["Tür"] == "HLS").sum()) if "Tür" in df_display.columns else 0
 
-    mc1, mc2, mc3, mc4, mc5 = st.columns(5)
-    mc1.metric("📺 Görünen Kanal", f"{len(df_display)} / {len(st.session_state.data)}")
-    mc2.metric("📁 Gruplar", group_count)
-    mc3.metric("🟢 Aktif", status_counts["active"])
-    mc4.metric("🌍 VPN Gerekli", status_counts["vpn"])
-    mc5.metric("📡 HLS", hls_count)
+    with st.container(key="workspace_summary"):
+        mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+        mc1.metric("Görünen / toplam kanal", f"{len(df_display)} / {len(st.session_state.data)}")
+        mc2.metric("Kanal grubu", group_count)
+        mc3.metric("Aktif bağlantı", status_counts["active"])
+        mc4.metric("Bölgesel kısıtlama", status_counts["vpn"])
+        mc5.metric("HLS yayını", hls_count)
+        if status_counts["pending"]:
+            st.caption(f"{status_counts['pending']} kanal henüz kontrol edilmedi.")
 
     active_filters = []
     active_filters.extend(f"Grup: {value}" for value in selected_groups)
@@ -244,10 +249,10 @@ if not st.session_state.data.empty:
     # 4 ANA ODAKLI SEKME
     tab_editor, tab_player, tab_export, tab_vpn = st.tabs(
         [
-            "📋 Kanallar & Düzenle",
-            "🎬 Canlı Oynatıcı",
-            "📤 Dışa Aktar & Paylaş",
-            "🌍 VPN & Yurt Dışı Çözümleri",
+            "Kanallar",
+            "Canlı oynatıcı",
+            "Dışa aktar & paylaş",
+            "Ağ ayarları",
         ]
     )
 
@@ -279,11 +284,10 @@ else:
     render_empty_state()
 
 # --- Footer ---
-st.markdown("---")
 st.markdown(
-    "<div style='text-align:center;padding:15px;'>"
-    "<p style='margin:0;font-size:0.8rem;color:#64748b;'>"
-    f"{PAGE_TITLE} v{APP_VERSION} | Streamlit {st.__version__} | Python {sys.version.split()[0]}</p>"
+    "<div class='app-footer'>"
+    f"<span>M3U Editör Pro · {APP_VERSION}</span>"
+    "<span>Yükle. Düzenle. İzle.</span>"
     "</div>",
     unsafe_allow_html=True,
 )

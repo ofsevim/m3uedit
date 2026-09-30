@@ -13,6 +13,8 @@
 - `utils/config.py`: `.env` ve ortam ayarları. Sürüm `utils.__version__` alanından gelir.
 - `utils/launcher.py` / `bootstrap.py`: paket ve repo başlatıcıları.
 - `static/styles.css`: paketlenen stil dosyası.
+- `.streamlit/config.toml`: doğrudan repo çalıştırmalarında koyu widget teması.
+  Paket başlatıcısı aynı renkleri `utils.config.UI_THEME` üzerinden uygular.
 
 Her kanal `_channel_id` taşır. Tablo bu alanı gizler ve düzenlemeye kapatır.
 Kaydetme, yalnızca görünür kimlikleri günceller veya siler; diğer kayıtları korur.

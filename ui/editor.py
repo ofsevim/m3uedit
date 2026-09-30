@@ -37,7 +37,7 @@ def render_editor(df_display):
         ]
 
     # Hızlı Aksiyonlar
-    st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
+    st.caption("Tablodaki değişiklikleri uygulamak için alttaki kaydet düğmesini kullanın.")
     act1, act2, act3, act4 = st.columns([2.4, 1.4, 1.4, 1.2])
 
     with act1:
@@ -228,7 +228,7 @@ def render_editor(df_display):
         table_df,
         width="stretch",
         hide_index=True,
-        height=TABLE_HEIGHT,
+        height=min(TABLE_HEIGHT, max(220, (len(table_df) + 2) * 35 + 3)),
         num_rows="dynamic",
         disabled=[CHANNEL_ID, "Durum", "Tür"],
         key="channel_data_editor_"

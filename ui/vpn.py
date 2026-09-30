@@ -7,11 +7,9 @@ from utils.config import USER_AGENT, USER_AGENT_PROFILES
 
 def render_vpn(df_display, get_proxy_server):
     v_col_settings, v_col_guide = st.columns([1.2, 1.8])
-    with v_col_settings:
-        st.markdown("#### ⚙️ Proxy & Tünel Ayarları")
-        st.caption(
-            "Yurt dışı veya bölge engelli akışları aşmak için proxy ve kimlik profili yapılandırması:"
-        )
+    with v_col_settings, st.container(key="network_settings"):
+        st.markdown("### Bağlantı tercihleri")
+        st.caption("Sağlayıcınız için proxy, cihaz profili ve Referer ayarlarını düzenleyin.")
 
         cfg_proxy = st.text_input(
             "Upstream Proxy (HTTP/HTTPS):",
@@ -60,8 +58,8 @@ def render_vpn(df_display, get_proxy_server):
         else:
             st.info("⚪ **Doğrudan Bağlantı:** Herhangi bir ara proxy kullanılmıyor.")
 
-    with v_col_guide:
-        st.markdown("#### 📘 Yurt Dışı Akışları Çözüm Rehberi")
+    with v_col_guide, st.container(key="network_guide"):
+        st.markdown("### Bağlantı rehberi")
         st.markdown("""
         * **1. Cihaz Profili:** Sağlayıcınızın desteklediği User-Agent profilini seçin. Profil değişikliği erişim veya bölge kısıtlamalarının kalkacağını garanti etmez.
         * **2. Upstream Proxy:** Güvendiğiniz HTTP/HTTPS proxy adresini girin (örn: `http://127.0.0.1:10808`). Uygulamanın indirme ve kontrol istekleri ile yerel proxy üzerinden oynatılan akışlar bu bağlantıyı kullanır. Doğrudan tarayıcı oynatımı kullanmaz.

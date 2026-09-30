@@ -10,8 +10,6 @@ from utils import network as network_utils
 from utils.config import (
     DEFAULT_TR_FILTER,
     DISABLE_SSL_VERIFY,
-    PAGE_ICON,
-    PAGE_TITLE,
     REQUEST_TIMEOUT,
     USER_AGENT,
     USER_AGENT_PROFILES,
@@ -39,6 +37,7 @@ def replace_playlist(frame):
 
 
 def render_source_loader():
+    st.markdown("#### Liste yükle")
     # Son kullanılan linkler geçmişi
     default_url_val = ""
     if st.session_state.recent_urls:
@@ -109,19 +108,29 @@ def render_source_loader():
 
 def render_empty_state():
     st.markdown(
-        f"""
-        <div class='empty-state fade-in'>
-            <div class='empty-state__icon'>{PAGE_ICON}</div>
-            <h2>{PAGE_TITLE}</h2>
-            <p>M3U çalma listenizi yükleyin, düzenleyin, sağlık kontrolü yapın veya canlı izleyin.</p>
+        """
+        <div class='hero'>
+            <span class='eyebrow'>M3U · IPTV ÇALIŞMA ALANI</span>
+            <h1>Yayın listenize<br><span class='hero-accent'>yeni bir düzen.</span></h1>
+            <p>Kanallarınızı tek bir yerde düzenleyin, çalışan yayınları bulun
+            ve favori listenizi istediğiniz cihazda kullanın.</p>
+            <div class='workflow'>
+                <span><b>01</b>Listenizi yükleyin</span>
+                <span><b>02</b>Düzenleyin & kontrol edin</span>
+                <span><b>03</b>İzleyin & dışa aktarın</span>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     card_c1, card_c2 = st.columns(2)
-    with card_c1:
-        st.markdown("##### 🌐 M3U URL ile Başlat")
+    with card_c1, st.container(key="import_url"):
+        st.markdown(
+            "<div class='section-heading'><span class='eyebrow'>BAĞLANTI İLE</span>"
+            "<h3>Listenizi içe aktarın</h3><p>M3U veya M3U8 bağlantınızı yapıştırın.</p></div>",
+            unsafe_allow_html=True,
+        )
         quick_url = st.text_input(
             "M3U Bağlantısı:", placeholder="https://example.com/playlist.m3u", key="quick_c_url"
         )
@@ -152,11 +161,16 @@ def render_empty_state():
             else:
                 st.warning("Lütfen bir link girin.")
 
-    with card_c2:
-        st.markdown("##### 📂 Dosya Yükleyerek Başlat")
+    with card_c2, st.container(key="import_file"):
+        st.markdown(
+            "<div class='section-heading'><span class='eyebrow'>DOSYA İLE</span>"
+            "<h3>Dosyanızı yükleyin</h3><p>Hazır listenizi sürükleyip bırakın.</p></div>",
+            unsafe_allow_html=True,
+        )
         center_file = st.file_uploader(
             "M3U / M3U8 Dosyası Bırakın", type=["m3u", "m3u8"], key="quick_c_file"
         )
+        st.caption("Yükleme tamamlandığında kanal çalışma alanınız açılır.")
         if center_file:
             try:
                 replace_playlist(import_playlist(center_file.getvalue(), only_tr=DEFAULT_TR_FILTER))
