@@ -52,3 +52,8 @@ htmlcov/
 
 # Visitor Counter Data
 visitor_data.json
+.pytest-work/
+.pytest-review-final/
+.test-tmp/
+temp_playlist.m3u
+temp_proxied_playlist.m3u

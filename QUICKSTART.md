@@ -1,92 +1,26 @@
-# 🚀 Hızlı Başlangıç Rehberi
+# Hızlı başlangıç
 
-## 5 Dakikada Başlayın!
+1. Python 3.11 veya üstünü kurun.
+2. `git clone https://github.com/ofsevim/m3uedit.git` ve `cd m3uedit` çalıştırın.
+3. Windows: `run.bat`; Linux/macOS: `bash run.sh`.
+4. Tarayıcıda http://127.0.0.1:8501 açın.
 
-### Windows Kullanıcıları
+İlk çalıştırma sanal ortamı ve bağımlılıkları hazırlar. Var olan `.venv` veya `venv` kullanılır.
+Başlatıcı herhangi bir çalışma dizininden çağrılabilir. `run.bat --check` / `bash run.sh --check`
+kurulumu denetler; eksik ortamı bu modda oluşturmaz.
 
-1. **Projeyi indirin**
-   ```cmd
-   git clone https://github.com/kullaniciadi/m3uedit.git
-   cd m3uedit
-   ```
+URL yapıştırın veya dosya seçip **Listeyi Çek ve Tara** düğmesine basın.
+Türkçe filtresi uygun kanal bulamıyorsa filtreyi kapatın. Hatalı yüklemelerde eski liste korunur.
 
-2. **Çift tıklayın**
-   - `run.bat` dosyasına çift tıklayın
-   - Otomatik olarak kurulum yapılacak ve uygulama başlayacak
+**Kanallar & Düzenle:** filtreleyin, düzenleyin, satır ekleyin/silin ve kaydedin.
+Görünmeyen kanallar, logolar ve M3U metadata'sı korunur.
+**Canlı Oynatıcı:** kanal seçin; akış varsayılan olarak oturuma özel proxy'den geçer.
+**Dışa Aktar & Paylaş:** görünen/tüm listeyi ve formatı seçip **İndirme Dosyasını Hazırla** düğmesine basın.
+**VPN & Yurt Dışı Çözümleri:** HTTP proxy, cihaz profili ve sağlayıcı Referer'ını ayarlayın.
 
-3. **Tarayıcıda açın**
-   - Otomatik olarak açılacak
-   - Veya manuel: http://localhost:8501
+TV kullanımı: `.env.example` dosyasını `.env` olarak kopyalayıp `ENABLE_LAN_SHARING=true` yapın ve uygulamayı yeniden başlatın.
+Dışa aktarma sekmesinde yerel link hazırlayın. Linkteki erişim anahtarını gizli tutun.
+Özel ağdaki IPTV sunucusu için ayrıca `ALLOW_PRIVATE_NETWORKS=true` gerekir.
+Yerel proxy portu varsayılan 8502'dir; uygulama ve liste linki bilgisayar açıkken kullanılabilir.
 
-### Linux/Mac Kullanıcıları
-
-1. **Projeyi indirin**
-   ```bash
-   git clone https://github.com/kullaniciadi/m3uedit.git
-   cd m3uedit
-   ```
-
-2. **Çalıştırın**
-   ```bash
-   chmod +x run.sh
-   ./run.sh
-   ```
-
-3. **Tarayıcıda açın**
-   - Otomatik olarak açılacak
-   - Veya manuel: http://localhost:8501
-
-## İlk Kullanım
-
-### 1. M3U Listesi Yükleyin
-
-**Seçenek A: URL ile**
-- Sol menüden "🌐 Linkten Yükle" seçin
-- M3U linkini yapıştırın
-- "Listeyi Çek ve Tara" butonuna tıklayın
-
-**Seçenek B: Dosya ile**
-- Sol menüden "📂 Dosya Yükle" seçin
-- M3U dosyasını sürükle-bırak yapın
-
-### 2. Kanalları Düzenleyin
-
-- ✅ İstediğiniz kanalları seçin
-- 🔍 Arama yapın
-- ✏️ Tabloda düzenleme yapın
-
-### 3. İndirin
-
-- 💾 "SADECE SEÇİLENLERİ İNDİR" butonuna tıklayın
-- Veya tüm listeyi indirin
-
-## Sorun mu Yaşıyorsunuz?
-
-### Python bulunamadı
-```bash
-# Python 3.11+ yükleyin
-# Windows: https://www.python.org/downloads/
-# Linux: sudo apt install python3.11
-# Mac: brew install python@3.11
-```
-
-### Bağımlılık hatası
-```bash
-pip install -r requirements.txt
-```
-
-### Port zaten kullanımda
-```bash
-# Farklı port kullanın
-streamlit run src/app.py --server.port=8502
-```
-
-## Yardım
-
-- 📖 [Detaylı Kullanım Kılavuzu](docs/KULLANIM_KILAVUZU.md)
-- 🐛 [Sorun Bildirin](https://github.com/kullaniciadi/m3uedit/issues)
-- 💬 [Soru Sorun](https://github.com/kullaniciadi/m3uedit/discussions)
-
----
-
-**İyi kullanımlar! 🎉**
+Uzak sunucu ve HTTPS kurulumları için [dağıtım rehberi](docs/DEPLOYMENT.md).

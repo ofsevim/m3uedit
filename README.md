@@ -1,250 +1,60 @@
-# 📺 M3U Editör Pro (Web)
+# M3U Editor Pro
 
-[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.31+-red.svg)](https://streamlit.io/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+A Streamlit app for loading, editing, checking and exporting IPTV playlists.
+[Türkçe](README.tr.md) · [Quick start](QUICKSTART.md) · [Deployment](docs/DEPLOYMENT.md)
 
-IPTV M3U playlist dosyalarını kolayca yönetmek, düzenlemek ve filtrelemek için geliştirilmiş modern bir web uygulaması.
+## Start
 
-> 💡 **Hızlı Başlangıç:** Windows'ta `run.bat`, Linux/Mac'te `./run.sh` çalıştırın!
+Python 3.11+ is required. Clone https://github.com/ofsevim/m3uedit and run:
 
-<!-- Ekran görüntüsü: docs/ klasörüne bir görsel ekleyip aşağıdaki satırı etkinleştirin. -->
-<!-- ![M3U Editor Pro](docs/screenshot.png) -->
+- Windows: `run.bat`
+- Linux/macOS: `bash run.sh`
 
-## ✨ Özellikler
+The launcher creates `.venv` when necessary, reuses an existing `.venv` or `venv`,
+installs missing dependencies and opens the app on http://127.0.0.1:8501.
+Run `python bootstrap.py --check` to check setup without starting the server.
 
-### 📥 Çoklu Yükleme Desteği
-- **🌐 URL'den Yükleme:** M3U linklerini doğrudan yapıştırarak yükleyin
-- **📂 Dosya Yükleme:** Bilgisayarınızdaki M3U/M3U8 dosyalarını sürükle-bırak
+Manual setup: `python -m pip install -e .`, then `m3uedit`.
+`streamlit run app.py` and the compatibility entrypoint `streamlit run src/app.py` also work.
+Copy `.env.example` to `.env` for optional settings; existing process environment values take precedence.
+The launcher applies SERVER_HOST, SERVER_PORT and MAX_FILE_SIZE_MB to Streamlit.
 
-### 🇹🇷 Akıllı Filtreleme
-- Türk kanallarını otomatik tespit etme
-- Grup bazlı akıllı arama
-- Özel regex pattern ile hassas filtreleme
+## Workflows
 
-### ✏️ İnteraktif Düzenleme
-- Kolay kanal seçimi (checkbox sistemi)
-- Canlı tablo düzenleme
-- Dinamik arama ve filtreleme
-- Grup ve kanal adı bazlı arama
+- Load a public HTTP(S) URL or upload an M3U/M3U8 file.
+- Filter by group, type, status or name. Saving a filtered table retains hidden channels and metadata.
+- Add or delete channels. Invalid edits and failed loads retain the existing playlist.
+- Run health checks; results are probes, not guarantees that playback will succeed.
+- Prepare M3U, M3U8, CSV, JSON, TXT or a proxy playlist on demand.
+- Explicitly publish an authenticated local playlist link or send a snapshot to a selected HTTPS paste service.
 
-### 💾 Esnek İndirme
-- Sadece seçili kanalları indir
-- Tüm listeyi toplu indir
-- Standart M3U formatında export
+M3U headers, EPG attributes, unknown EXTINF attributes, comma-containing names and channel directives
+are retained on M3U export. CSV/JSON contain the visible channel fields.
 
-### 📊 Gerçek Zamanlı İstatistikler
-- Toplam kanal sayısı
-- Seçilen kanal sayısı
-- Benzersiz grup sayısı
+## Network defaults
 
-### 👥 Ziyaretçi Sayacı
-- Toplam ziyaret sayısı
-- Benzersiz ziyaretçi takibi
-- İlk ve son ziyaret tarihleri
-- Otomatik oturum yönetimi
+TLS certificates are verified. Non-HTTP(S), private, loopback and link-local targets are blocked,
+including redirect destinations. Direct connections use validated DNS addresses.
+The proxy binds to localhost on port 8502 and requires an unguessable per-session token.
+Each session has its own settings and temporary files; resources expire with the session/process.
+LAN sharing and private-source access are separate opt-ins. Only trusted local installations should enable them.
+An explicitly selected upstream HTTP(S) proxy is trusted to resolve and connect to provider hosts.
+SOCKS URLs are not supported; use the HTTP port exposed by your VPN client.
 
-## 🚀 Hızlı Başlangıç
+Remote browser playback requires a reachable HTTPS reverse proxy configured through
+PROXY_PUBLIC_BASE_URL and PROXY_ALLOWED_ORIGIN; localhost addresses in a remote browser refer to that browser's computer.
+See [deployment](docs/DEPLOYMENT.md). No automatic external stream relay is used.
+DRM-protected sources are not supported; HLS and MPEG-TS have the primary playback path.
 
-### Otomatik Kurulum (Önerilen)
+## Development
 
-**Windows:**
-```bash
-git clone https://github.com/kullaniciadi/m3uedit.git
-cd m3uedit
-run.bat
+```sh
+python -m pip install -e ".[dev]"
+python -m pytest
+python -m ruff check app.py bootstrap.py setup.py src utils ui static tests
 ```
 
-**Linux/Mac:**
-```bash
-git clone https://github.com/kullaniciadi/m3uedit.git
-cd m3uedit
-chmod +x run.sh
-./run.sh
-```
+The tests use local fixtures and block external connections. CI requires tests and lint to pass
+on Windows/Linux with Python 3.11/3.14, then builds the wheel. Version metadata comes from `utils.__version__`.
 
-Otomatik script:
-- ✅ Virtual environment oluşturur
-- ✅ Bağımlılıkları yükler
-- ✅ Uygulamayı başlatır
-- ✅ Tarayıcıda açar
-
-### Manuel Kurulum
-
-<details>
-<summary>Detaylı adımlar için tıklayın</summary>
-
-#### Gereksinimler
-- Python 3.11 veya üzeri
-- pip (Python paket yöneticisi)
-
-#### Adımlar
-
-1. **Repository'yi klonlayın:**
-```bash
-git clone https://github.com/kullaniciadi/m3uedit.git
-cd m3uedit
-```
-
-2. **Virtual environment oluşturun:**
-```bash
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-```
-
-3. **Bağımlılıkları yükleyin:**
-```bash
-pip install -r requirements.txt
-```
-
-4. **Uygulamayı başlatın:**
-```bash
-streamlit run src/app.py
-```
-
-5. **Tarayıcınızda açın:**
-   - Otomatik: Uygulama tarayıcıda açılır
-   - Manuel: http://localhost:8501
-
-</details>
-
-## 📖 Kullanım Kılavuzu
-
-### 1️⃣ M3U Listesi Yükleme
-
-**URL ile:**
-1. Sol menüden "🌐 Linkten Yükle" seçin
-2. M3U linkini yapıştırın
-3. İsteğe bağlı: "🇹🇷 SADECE TR" filtresini aktifleştirin
-4. "Listeyi Çek ve Tara" butonuna tıklayın
-
-**Dosya ile:**
-1. Sol menüden "📂 Dosya Yükle" seçin
-2. M3U dosyasını sürükle-bırak veya seçin
-
-### 2️⃣ Kanalları Düzenleme
-
-- **Arama:** Üst kısımdaki arama kutusunu kullanın
-- **Seçim:** İstediğiniz kanalların başındaki kutuyu işaretleyin
-- **Düzenleme:** Tabloda doğrudan değişiklik yapabilirsiniz
-
-### 3️⃣ Export
-
-- **Seçili Kanallar:** Sadece işaretli kanalları indir
-- **Tüm Liste:** Tüm kanalları indir
-
-## 🔧 Yapılandırma
-
-### TR Filtresi Pattern
-
-Türk kanallar için kullanılan anahtar kelimeler:
-- TR, TURK, TÜRK
-- TURKIYE, TÜRKİYE
-- YERLI, ULUSAL
-- ISTANBUL
-
-### SSL Sertifika Ayarları
-
-Uygulama, bazı IPTV sağlayıcılarının SSL sertifika sorunlarını bypass eder. Güvenilir olmayan kaynaklardan liste çekerken dikkatli olun.
-
-## 📁 Proje Yapısı
-
-```
-m3uedit/
-├── .devcontainer/          # Dev Container yapılandırması
-├── .streamlit/             # Streamlit yapılandırması
-│   └── config.toml
-├── docs/                   # Dokümantasyon
-│   ├── API.md
-│   ├── KULLANIM_KILAVUZU.md
-│   └── DEPLOYMENT.md
-├── src/                    # Kaynak kodlar
-│   └── app.py             # Ana uygulama
-├── static/                 # Statik dosyalar
-│   └── styles.css
-├── tests/                  # Test dosyaları
-│   └── test_parser.py
-├── utils/                  # Yardımcı modüller
-│   ├── config.py          # Yapılandırma
-│   └── visitor_counter.py # Ziyaretçi sayacı
-├── .gitattributes
-├── .gitignore
-├── CHANGELOG.md           # Değişiklik günlüğü
-├── CONTRIBUTING.md        # Katkı rehberi
-├── LICENSE                # MIT Lisans
-├── README.md              # Bu dosya
-└── requirements.txt       # Python bağımlılıkları
-```
-
-## 🛠️ Teknoloji Stack
-
-- **Streamlit** - Web framework
-- **Pandas** - Veri işleme
-- **Python urllib** - HTTP istekleri
-- **Re** - Regex işlemleri
-
-## 📚 Dokümantasyon
-
-- [Kullanım Kılavuzu](docs/KULLANIM_KILAVUZU.md)
-- [API Dokümantasyonu](docs/API.md)
-- [Deployment Rehberi](docs/DEPLOYMENT.md)
-- [Katkı Rehberi](CONTRIBUTING.md)
-- [Değişiklik Günlüğü](CHANGELOG.md)
-
-## ⚠️ Bilinen Sınırlamalar
-
-- Çok büyük M3U dosyaları (10,000+ kanal) performans sorunlarına yol açabilir
-- SSL doğrulama devre dışı bırakıldığı için güvenilmeyen kaynaklara dikkat edin
-
-## 🔐 Güvenlik Notları
-
-- Sadece güvendiğiniz kaynaklardan M3U listesi yükleyin
-- Uygulamanın public internete açılması önerilmez
-- Localhost/local network kullanımı için tasarlanmıştır
-
-## 🤝 Katkıda Bulunma
-
-Katkılarınızı bekliyoruz! Lütfen [CONTRIBUTING.md](CONTRIBUTING.md) dosyasını okuyun.
-
-1. Fork yapın
-2. Feature branch oluşturun (`git checkout -b feature/yeni-ozellik`)
-3. Değişikliklerinizi commit edin (`git commit -m 'feat: yeni özellik'`)
-4. Branch'inizi push edin (`git push origin feature/yeni-ozellik`)
-5. Pull request gönderin
-
-## 📝 Lisans
-
-Bu proje MIT lisansı altında açık kaynak kodludur. Detaylar için [LICENSE](LICENSE) dosyasına bakın.
-
-## 💬 Destek ve İletişim
-
-- 🐛 **Bug Report:** [GitHub Issues](https://github.com/kullaniciadi/m3uedit/issues)
-- 💡 **Feature Request:** [GitHub Issues](https://github.com/kullaniciadi/m3uedit/issues)
-- 📧 **E-posta:** support@example.com
-- 💬 **Discussions:** [GitHub Discussions](https://github.com/kullaniciadi/m3uedit/discussions)
-
-## 🌟 Yıldız Geçmişi
-
-[![Star History Chart](https://api.star-history.com/svg?repos=kullaniciadi/m3uedit&type=Date)](https://star-history.com/#kullaniciadi/m3uedit&Date)
-
-## 👥 Katkıda Bulunanlar
-
-Teşekkürler! ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
-
-<!-- ALL-CONTRIBUTORS-LIST:START -->
-<!-- ALL-CONTRIBUTORS-LIST:END -->
-
-## 📊 İstatistikler
-
-![GitHub stars](https://img.shields.io/github/stars/kullaniciadi/m3uedit?style=social)
-![GitHub forks](https://img.shields.io/github/forks/kullaniciadi/m3uedit?style=social)
-![GitHub watchers](https://img.shields.io/github/watchers/kullaniciadi/m3uedit?style=social)
-
----
-
-**⭐ Beğendiyseniz yıldız vermeyi unutmayın!**
-
-<div align="center">
-  Made with ❤️ by M3U Editor Pro Team
-</div>
+MIT license. See [architecture](docs/ARCHITECTURE.md), [API](docs/API.md) and [security](SECURITY.md).

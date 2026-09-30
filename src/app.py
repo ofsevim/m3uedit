@@ -6,10 +6,12 @@ avoiding a second, divergent copy of the application logic.
 
 from __future__ import annotations
 
-from pathlib import Path
 import runpy
+from pathlib import Path
 
 from utils.parser import convert_df_to_m3u, filter_channels, parse_m3u_lines
+
+__all__ = ["convert_df_to_m3u", "filter_channels", "parse_m3u_lines", "main"]
 
 
 ROOT_APP_PATH = Path(__file__).resolve().parent.parent / "app.py"

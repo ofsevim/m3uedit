@@ -1,14 +1,19 @@
-"""Network helpers for playlist fetching and share-link creation."""
+"""Bounded downloads with consistent TLS, redirect and address policies."""
 
-from __future__ import annotations
-
+import functools
+import http.client
+import socket
 import ssl
+import threading
+import time
 import urllib.parse
 import urllib.request
 
+from utils import config
+from utils.security import resolve_addresses, validate_proxy, validate_target, validate_url
 
-def create_ssl_context(disable_ssl_verify: bool) -> ssl.SSLContext:
-    """Build an SSL context based on the current trust policy."""
+
+def create_ssl_context(disable_ssl_verify: bool = False) -> ssl.SSLContext:
     context = ssl.create_default_context()
     if disable_ssl_verify:
         context.check_hostname = False
@@ -16,130 +21,233 @@ def create_ssl_context(disable_ssl_verify: bool) -> ssl.SSLContext:
     return context
 
 
+def _connect(
+    address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None, *, allow_private=False
+):
+    """Connect to the exact approved DNS answer, without a second DNS lookup."""
+    failure = None
+    for family, socktype, proto, _, sockaddr in resolve_addresses(
+        *address, allow_private=allow_private
+    ):
+        sock = socket.socket(family, socktype, proto)
+        try:
+            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                sock.settimeout(timeout)
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as exc:
+            failure = exc
+            sock.close()
+    raise failure or OSError("Bağlantı kurulamadı.")
+
+
+class _HTTPConnection(http.client.HTTPConnection):
+    def __init__(self, *args, allow_private=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = functools.partial(_connect, allow_private=allow_private)
+
+
+class _HTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, *args, allow_private=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = functools.partial(_connect, allow_private=allow_private)
+
+
+class _HTTPHandler(urllib.request.HTTPHandler):
+    def __init__(self, allow_private):
+        super().__init__()
+        self.allow_private = allow_private
+
+    def http_open(self, req):
+        return self.do_open(
+            functools.partial(_HTTPConnection, allow_private=self.allow_private), req
+        )
+
+
+class _HTTPSHandler(urllib.request.HTTPSHandler):
+    def __init__(self, context, allow_private):
+        super().__init__(context=context)
+        self.allow_private = allow_private
+
+    def https_open(self, req):
+        return self.do_open(
+            functools.partial(_HTTPSConnection, allow_private=self.allow_private),
+            req,
+            context=self._context,
+        )
+
+
+class _RedirectHandler(urllib.request.HTTPRedirectHandler):
+    def __init__(self, allow_private):
+        self.allow_private = allow_private
+
+    def http_error_302(self, req, fp, code, msg, headers):
+        class UndrainedResponse:
+            def read(self, *args):
+                return b""
+
+            def close(self):
+                fp.close()
+
+            def __getattr__(self, name):
+                return getattr(fp, name)
+
+        try:
+            return super().http_error_302(req, UndrainedResponse(), code, msg, headers)
+        finally:
+            fp.close()
+
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        validate_target(newurl, allow_private=self.allow_private)
+        if urllib.parse.urlsplit(req.full_url).scheme == "https" and newurl.startswith("http:"):
+            raise ValueError("HTTPS adresinden HTTP adresine yönlendirme engellendi.")
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if (
+            redirected
+            and urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc
+        ):
+            for key in ("Authorization", "Cookie", "Referer"):
+                redirected.remove_header(key)
+        return redirected
+
+
+def open_url(request, *, timeout=30, disable_ssl_verify=None, proxy_url=None, allow_private=None):
+    allow_private = config.ALLOW_PRIVATE_NETWORKS if allow_private is None else allow_private
+    disable_ssl_verify = (
+        config.DISABLE_SSL_VERIFY if disable_ssl_verify is None else disable_ssl_verify
+    )
+    if isinstance(request, str):
+        request = urllib.request.Request(request)
+    validate_target(request.full_url, allow_private=allow_private)
+    validate_proxy(proxy_url)
+    context = create_ssl_context(disable_ssl_verify)
+    handlers = [
+        urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url} if proxy_url else {}),
+        _RedirectHandler(allow_private),
+    ]
+    if proxy_url:
+        # This proxy is explicitly chosen by the user; its egress DNS is trusted.
+        handlers.extend(
+            [urllib.request.HTTPHandler(), urllib.request.HTTPSHandler(context=context)]
+        )
+    else:
+        handlers.extend([_HTTPHandler(allow_private), _HTTPSHandler(context, allow_private)])
+    return urllib.request.build_opener(*handlers).open(request, timeout=timeout)
+
+
+def read_bounded(response, max_bytes: int, *, deadline_seconds: float = 30) -> bytes:
+    """Read bounded chunks, even when a hostile response has one huge line."""
+    length = response.headers.get("Content-Length") if getattr(response, "headers", None) else None
+    if length:
+        try:
+            oversized = int(length) > max_bytes
+        except ValueError:
+            oversized = False
+        if oversized:
+            raise ValueError("Dosya boyutu sınırı aşıldı.")
+    parts, size = [], 0
+    deadline = time.monotonic() + deadline_seconds
+    read = getattr(response, "read1", response.read)
+    sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+    socket_timeout = sock.gettimeout() if sock else None
+
+    def interrupt():
+        # A chunk-size/trailer line can drip forever inside HTTPResponse.readline.
+        # Shutdown wakes that read even if individual bytes never hit its socket timeout.
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+    timer = threading.Timer(max(0, deadline_seconds), interrupt) if sock else None
+    if timer:
+        timer.daemon = True
+        timer.start()
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("İndirme süresi sınırı aşıldı.")
+            if sock and sock.fileno() >= 0:
+                sock.settimeout(min(socket_timeout, remaining) if socket_timeout else remaining)
+            try:
+                chunk = read(min(64 * 1024, max_bytes - size + 1))
+            except (OSError, http.client.HTTPException) as exc:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("İndirme süresi sınırı aşıldı.") from exc
+                raise
+            if time.monotonic() >= deadline:
+                raise TimeoutError("İndirme süresi sınırı aşıldı.")
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > max_bytes:
+                raise ValueError("Dosya boyutu sınırı aşıldı.")
+            parts.append(chunk)
+        return b"".join(parts)
+    finally:
+        if timer:
+            timer.cancel()
+
+
 def fetch_m3u_source(
     url: str,
     *,
     user_agent: str,
     timeout: int,
-    disable_ssl_verify: bool,
-    proxy_url: str | None = None,
-    headers: dict | None = None,
+    disable_ssl_verify: bool = False,
+    proxy_url=None,
+    headers=None,
 ) -> list[bytes]:
-    """Download a playlist and return its raw lines, with size protection to avoid OOM.
-    
-    Supports optional upstream proxy and custom headers (e.g. for geo-blocked/protected IPTV streams).
-    """
-    try:
-        from utils.config import MAX_FILE_SIZE_MB
-        max_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
-    except Exception:
-        max_bytes = 50 * 1024 * 1024
-        MAX_FILE_SIZE_MB = 50
-
-    req_headers = {"User-Agent": user_agent}
-    if headers:
-        req_headers.update(headers)
-
-    request = urllib.request.Request(url, headers=req_headers)
-    context = create_ssl_context(disable_ssl_verify)
-
-    def _open():
-        if proxy_url:
-            proxy_handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
-            https_handler = urllib.request.HTTPSHandler(context=context)
-            opener = urllib.request.build_opener(proxy_handler, https_handler)
-            return opener.open(request, timeout=timeout)
-        return urllib.request.urlopen(request, timeout=timeout, context=context)
-
-    with _open() as response:
-
-        # Content-Length kontrolü (eğer sunucu gönderdiyse hızlı kontrol)
-        cl = None
-        if hasattr(response, "getheader"):
-            cl = response.getheader("Content-Length")
-        elif hasattr(response, "headers") and response.headers is not None:
-            cl = response.headers.get("Content-Length")
-
-        if cl:
-            try:
-                if int(cl) > max_bytes:
-                    raise ValueError(f"Dosya boyutu sınırı aşıldı (Maks: {MAX_FILE_SIZE_MB}MB)")
-            except ValueError as e:
-                raise e
-            except Exception:
-                pass
-
-        # Satır satır okurken boyutu kontrol et (Content-Length gönderilmese bile korur)
-        lines = []
-        bytes_read = 0
-
-        # Testlerdeki Mock nesneleri her zaman iterable olmayabilir.
-        # Eğer iterable ise güvenli bir şekilde satır satır okuyup boyutu kontrol ederiz.
-        # Iterable değilse varsayılan readlines() yöntemine geri döneriz.
-        if hasattr(response, "__iter__"):
-            for line in response:
-                bytes_read += len(line)
-                if bytes_read > max_bytes:
-                    raise ValueError(f"Dosya boyutu sınırı aşıldı (Maks: {MAX_FILE_SIZE_MB}MB)")
-                lines.append(line)
-        else:
-            lines = response.readlines()
-        return lines
+    validate_url(url)
+    request = urllib.request.Request(url, headers={"User-Agent": user_agent, **(headers or {})})
+    with open_url(
+        request, timeout=timeout, disable_ssl_verify=disable_ssl_verify, proxy_url=proxy_url
+    ) as response:
+        return read_bounded(
+            response, config.MAX_FILE_SIZE_MB * 1024 * 1024, deadline_seconds=timeout
+        ).splitlines(keepends=True)
 
 
 def create_m3u_link(
     m3u_content: str,
     *,
     user_agent: str,
-    disable_ssl_verify: bool,
-    timeout: int = 15,
+    disable_ssl_verify=False,
+    timeout=15,
+    service="paste.rs",
+    consent=False,
 ) -> str:
-    """Upload filtered M3U content to a paste service and return a raw URL."""
-    # 🚀 1. Termbin.com (Çok hızlı, sade metin ve Türkiye'de DNS engelsiz)
-    import socket
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(timeout)
-            s.connect(("termbin.com", 9999))
-            s.sendall(m3u_content.encode("utf-8"))
-            paste_url = s.recv(1024).decode("utf-8").strip()
-            if paste_url.startswith("http"):
-                return paste_url
-    except Exception:
-        pass
-
-    context = create_ssl_context(disable_ssl_verify)
-
-    try:
-        request = urllib.request.Request(
-            "https://paste.rs/",
-            data=m3u_content.encode("utf-8"),
-            headers={"User-Agent": user_agent, "Content-Type": "text/plain"},
-        )
-        with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
-            paste_url = response.read().decode("utf-8").strip()
-            if paste_url.startswith("http"):
-                return paste_url
-    except Exception:
-        pass
-
-    try:
+    """Explicit, verified HTTPS publishing; never silently switch services."""
+    if not consent:
+        raise ValueError("Harici paylaşım için açık onay gerekli.")
+    if service == "paste.rs":
+        url = "https://paste.rs/"
+        data = m3u_content.encode("utf-8")
+        headers = {"Content-Type": "text/plain"}
+    elif service == "dpaste.com":
+        url = "https://dpaste.com/api/v2/"
         data = urllib.parse.urlencode(
-            {
-                "content": m3u_content,
-                "syntax": "text",
-                "expiry_days": 365,
-            }
-        ).encode("utf-8")
-        request = urllib.request.Request(
-            "https://dpaste.com/api/v2/",
-            data=data,
-            headers={"User-Agent": user_agent},
-        )
-        with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
-            paste_url = response.read().decode("utf-8").strip().strip('"')
-            if paste_url and not paste_url.endswith(".txt"):
-                paste_url = paste_url.rstrip("/") + ".txt"
-            return paste_url
-    except Exception:
-        return ""
+            {"content": m3u_content, "syntax": "text", "expiry_days": 1}
+        ).encode()
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    else:
+        raise ValueError("Desteklenmeyen paylaşım servisi.")
+    if len(data) > config.MAX_FILE_SIZE_MB * 1024 * 1024:
+        raise ValueError("Dosya boyutu sınırı aşıldı.")
+    request = urllib.request.Request(url, data=data, headers={"User-Agent": user_agent, **headers})
+    # Publishing always verifies TLS, even if a local IPTV source opted out.
+    with open_url(
+        request, timeout=timeout, disable_ssl_verify=False, allow_private=False
+    ) as response:
+        link = read_bounded(response, 4096, deadline_seconds=timeout).decode().strip().strip('"')
+    parsed = validate_url(link)
+    if parsed.scheme != "https" or parsed.hostname != service:
+        raise ValueError("Paylaşım servisi geçersiz bağlantı döndürdü.")
+    if service == "dpaste.com" and not link.endswith(".txt"):
+        link = link.rstrip("/") + ".txt"
+    return link

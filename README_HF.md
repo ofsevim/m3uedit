@@ -4,51 +4,15 @@ emoji: 📺
 colorFrom: blue
 colorTo: purple
 sdk: streamlit
-streamlit_file: src/app.py
+streamlit_file: app.py
 pinned: false
 ---
 
-# 📺 M3U Editör Pro (Web)
+# M3U Editör Pro
 
-IPTV M3U playlist dosyalarını kolayca yönetmek, düzenlemek ve filtrelemek için geliştirilmiş modern bir web uygulaması.
+[Özellikler ve kurulum](README.tr.md) · [Uzak sunucu dağıtımı](docs/DEPLOYMENT.md)
 
-## ✨ Özellikler
-
-### 📥 Çoklu Yükleme Desteği
-- **🌐 URL'den Yükleme:** M3U linklerini doğrudan yapıştırarak yükleyin
-- **📂 Dosya Yükleme:** Bilgisayarınızdaki M3U/M3U8 dosyalarını sürükle-bırak
-
-### 🇹🇷 Akıllı Filtreleme
-- Türk kanallarını otomatik tespit etme
-- Grup bazlı akıllı arama
-- Özel regex pattern ile hassas filtreleme
-
-### ✏️ İnteraktif Düzenleme
-- Kolay kanal seçimi (checkbox sistemi)
-- Canlı tablo düzenleme
-- Dinamik arama ve filtreleme
-
-### 💾 Esnek İndirme
-- Sadece seçili kanalları indir
-- Tüm listeyi toplu indir
-- Standart M3U formatında export
-
-### 📊 Gerçek Zamanlı İstatistikler
-- Toplam kanal sayısı
-- Seçilen kanal sayısı
-- Benzersiz grup sayısı
-
-### 👥 Ziyaretçi Sayacı
-- Toplam ziyaret sayısı
-- Benzersiz ziyaretçi takibi
-- İlk ve son ziyaret tarihleri
-
-## 🚀 Kullanım
-
-1. Sol menüden M3U linki yapıştırın veya dosya yükleyin
-2. İstediğiniz kanalları işaretleyin
-3. Seçili kanalları veya tüm listeyi indirin
-
----
-
-Made with ❤️ using Streamlit
+Ana giriş `app.py` dosyasıdır. Liste düzenleme, dosya indirme ve sağlık kontrolü desteklenir.
+Managed platform ikinci proxy portunu dışarı açmıyorsa browser proxy oynatımı için ulaşılabilir
+HTTPS gateway yapılandırması gerekir. Tarayıcıdaki localhost uzak sunucuyu göstermez.
+TLS/CORS/XSRF korumalarını kapatmayın. Harici paylaşım yalnızca seçilen HTTPS servisine açık onayla yapılır.

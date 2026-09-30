@@ -1,15 +1,11 @@
 # M3U Editor Pro parser tests
 
-import os
-import sys
 from unittest.mock import patch
 
 import pandas as pd
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-from app import convert_df_to_m3u, filter_channels, parse_m3u_lines
 from utils import parser as parser_utils
+from utils.parser import convert_df_to_m3u, filter_channels, parse_m3u_lines
 
 
 def test_parse_m3u_basic():
@@ -84,6 +80,12 @@ def test_parse_url_type_detection():
     assert channels[1]["Tür"] == "DASH"
 
 
+def test_explicit_stream_format_takes_priority_over_live_path():
+    assert parser_utils.detect_type("https://example.com/live/account/channel.ts") == "MPEG-TS"
+    assert parser_utils.detect_type("https://example.com/live/account/channel.mpd") == "DASH"
+    assert parser_utils.detect_type("https://example.com/live/account/channel.mp4") == "Diğer"
+
+
 def test_filter_channels_tr():
     channels = [
         {"Grup": "TR | Spor", "Kanal Adı": "Spor", "URL": "http://a.com"},
@@ -155,7 +157,12 @@ def test_batch_check_health_progress_is_consistent():
 def test_convert_df_to_proxied_m3u():
     df = pd.DataFrame(
         [
-            {"Grup": "Spor", "Kanal Adı": "Canlı Maç", "URL": "http://stream.com/live.m3u8", "LogoURL": ""},
+            {
+                "Grup": "Spor",
+                "Kanal Adı": "Canlı Maç",
+                "URL": "http://stream.com/live.m3u8",
+                "LogoURL": "",
+            },
         ]
     )
     proxied_m3u = parser_utils.convert_df_to_proxied_m3u(df, "http://192.168.1.50:8888/proxy")
@@ -166,7 +173,14 @@ def test_convert_df_to_proxied_m3u():
 def test_convert_df_to_csv_json_txt():
     df = pd.DataFrame(
         [
-            {"Grup": "Haber", "Kanal Adı": "Haber TV", "URL": "http://haber.com/stream.m3u8", "Tür": "HLS", "Durum": "✅ Aktif", "LogoURL": ""},
+            {
+                "Grup": "Haber",
+                "Kanal Adı": "Haber TV",
+                "URL": "http://haber.com/stream.m3u8",
+                "Tür": "HLS",
+                "Durum": "✅ Aktif",
+                "LogoURL": "",
+            },
         ]
     )
     csv_out = parser_utils.convert_df_to_csv(df)
@@ -175,6 +189,7 @@ def test_convert_df_to_csv_json_txt():
 
     json_out = parser_utils.convert_df_to_json(df)
     import json
+
     data = json.loads(json_out)
     assert len(data) == 1
     assert data[0]["Kanal Adı"] == "Haber TV"
@@ -186,8 +201,8 @@ def test_convert_df_to_csv_json_txt():
 
 def test_check_single_url_geo_blocked_vpn_detection():
     import urllib.error
+
     err_403 = urllib.error.HTTPError("http://geoblocked.com", 403, "Forbidden", {}, None)
-    with patch("urllib.request.urlopen", side_effect=err_403):
+    with patch("utils.network.open_url", side_effect=err_403):
         res = parser_utils._check_single_url("http://geoblocked.com")
         assert res == "🌍 VPN Gerekebilir"
-
