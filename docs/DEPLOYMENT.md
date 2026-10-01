@@ -61,6 +61,15 @@ Token uygulama hesabı yerine geçmez; proxy kabiliyet anahtarıdır.
 Tek uygulama süreci desteklenir; çoklu replica kurulumu oturum yapışkanlığı ve proxy yönlendirmesi gerektirir.
 Bu repoda Docker dağıtım dosyaları bulunmaz.
 
+## Streamlit Community Cloud
+
+Dağıtımda `main` dalındaki `app.py` giriş dosyasını ve Python 3.12 kullanın.
+Bulut bağımlılıkları kökteki `requirements.txt` ile kurulur. `uv.lock` yalnızca
+yerel kullanım içindir ve Git tarafından yok sayılır: Community Cloud bu dosyayı
+`requirements.txt` dosyasından önce seçer; eski uv sürümleri dinamik paket sürümünü
+içeren yeni kilit dosyalarını okuyamayabilir.
+Bkz. [Community Cloud bağımlılık dosyası önceliği](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/app-dependencies).
+
 Streamlit Community Cloud ve bazı managed platformlar ikinci portu dışarı açmaz.
 Bu platformlarda düzenleme/indirme/sağlık kontrolü çalışır; yerel proxy oynatımı için ulaşılabilir
 bir gateway gerekir. Doğrudan oynatma seçeneği sağlayıcının HTTPS/CORS desteğine bağlıdır.

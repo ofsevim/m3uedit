@@ -6,6 +6,7 @@
 - New start screen, import cards, workspace summaries and shorter navigation.
 - Grouped export/network views, collapsible player details and mobile sidebar behavior.
 - Apply the native theme through the installed launcher as well as repository configuration.
+- Fix Community Cloud installation with requirements.txt; keep local uv lockfiles out of deployments and verify Cloud startup in CI.
 
 ## 2.2.0 — 2026-09-30
 
