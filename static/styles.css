@@ -43,6 +43,7 @@ h1, h2, h3, h4, h5, h6 { color: var(--text); letter-spacing: -.035em; }
 .page-header h1 { margin: 0; padding: 0; font-size: clamp(26px, 3vw, 36px); font-weight: 700; }
 .page-header p, .section-heading p { margin: 8px 0 0; color: var(--muted); line-height: 1.6; font-size: 14px; }
 .hero { padding: 26px 0 32px; max-width: 800px; }
+.st-key-onboarding { max-width: 1100px; margin-inline: auto; }
 .hero h1 { margin: 0; padding: 0; font-size: clamp(32px, 4vw, 52px); line-height: 1.15; font-weight: 750; letter-spacing: -2px; }
 .hero .hero-accent { color: var(--accent); }
 .hero p { color: var(--muted); max-width: 570px; margin: 18px 0 24px; line-height: 1.75; font-size: 15px; }

@@ -120,43 +120,58 @@ if vc is not None and "visited" not in st.session_state:
     vc.increment_visit(session_id)
     st.session_state.visited = True
 
+# Import replacement runs before filter widgets so their selections can be reset.
+if not st.session_state.data.empty:
+    st.markdown(
+        """
+        <div class="page-header">
+            <span class="eyebrow">ÇALIŞMA ALANI</span>
+            <h1>Kanal listeniz, kontrolünüzde.</h1>
+            <p>Kanalları düzenleyin, bağlantıları kontrol edin ve listenizi yanınızda götürün.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    with st.expander("Yeni liste yükle"):
+        st.caption("Yeni liste başarıyla yüklendiğinde mevcut listenizin yerini alır.")
+        render_source_loader()
+
 # =====================================================================
 # SIDEBAR
 # =====================================================================
 
-with st.sidebar:
-    st.markdown(
-        "<div class='sidebar-brand'>"
-        "<span class='sidebar-brand__icon' aria-hidden='true'>▤</span>"
-        "<div>"
-        "<span class='sidebar-brand__title'>M3U Editör Pro</span>"
-        "<span class='sidebar-brand__subtitle'>Kanal çalışma alanınız</span>"
-        "</div>"
-        "</div>",
-        unsafe_allow_html=True,
-    )
+selected_groups = []
+selected_types = []
+selected_statuses = []
 
-    # Ağ & Proxy mini durum göstergesi
-    if st.session_state.upstream_proxy:
+if not st.session_state.data.empty:
+    with st.sidebar:
         st.markdown(
-            "<div class='connection-status connection-status--active'><span class='status-dot'></span>Proxy yapılandırıldı</div>",
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            "<div class='connection-status'><span class='status-dot'></span>Doğrudan bağlantı</div>",
+            "<div class='sidebar-brand'>"
+            "<span class='sidebar-brand__icon' aria-hidden='true'>▤</span>"
+            "<div>"
+            "<span class='sidebar-brand__title'>M3U Editör Pro</span>"
+            "<span class='sidebar-brand__subtitle'>Kanal çalışma alanınız</span>"
+            "</div>"
+            "</div>",
             unsafe_allow_html=True,
         )
 
-    st.markdown("---")
+        # Ağ & Proxy mini durum göstergesi
+        if st.session_state.upstream_proxy:
+            st.markdown(
+                "<div class='connection-status connection-status--active'><span class='status-dot'></span>Proxy yapılandırıldı</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                "<div class='connection-status'><span class='status-dot'></span>Doğrudan bağlantı</div>",
+                unsafe_allow_html=True,
+            )
 
-    render_source_loader()
+        st.markdown("---")
 
-    # Filtreler
-    selected_groups = []
-    selected_types = []
-    selected_statuses = []
-    if not st.session_state.data.empty:
+        # Filtreler
         st.markdown("#### Liste filtreleri")
         try:
             group_options = sorted(st.session_state.data["Grup"].astype(str).dropna().unique())
@@ -182,18 +197,18 @@ with st.sidebar:
                 "Duruma göre", status_options, default=None, key="status_filter"
             )
 
-    # İstatistikler
-    if vc is not None:
-        stats = vc.get_stats()
-        try:
-            last_visit = datetime.fromisoformat(stats["last_visit"]).strftime("%d.%m.%Y %H:%M")
-        except (ValueError, KeyError):
-            last_visit = "—"
-        with st.expander("Kullanım istatistikleri"):
-            st.caption(
-                f"{stats['total_visits']} ziyaret · {stats['unique_visitors']} tekil ziyaretçi"
-            )
-            st.caption(f"Son ziyaret: {last_visit}")
+        # İstatistikler
+        if vc is not None:
+            stats = vc.get_stats()
+            try:
+                last_visit = datetime.fromisoformat(stats["last_visit"]).strftime("%d.%m.%Y %H:%M")
+            except (ValueError, KeyError):
+                last_visit = "—"
+            with st.expander("Kullanım istatistikleri"):
+                st.caption(
+                    f"{stats['total_visits']} ziyaret · {stats['unique_visitors']} tekil ziyaretçi"
+                )
+                st.caption(f"Son ziyaret: {last_visit}")
 
 # =====================================================================
 # ANA EKRAN
@@ -209,18 +224,6 @@ if not st.session_state.data.empty:
         df_display = df_display[df_display["Tür"].isin(selected_types)]
     if selected_statuses:
         df_display = df_display[df_display["Durum"].isin(selected_statuses)]
-
-    # Üst Başlık
-    st.markdown(
-        """
-        <div class="page-header">
-            <span class="eyebrow">ÇALIŞMA ALANI</span>
-            <h1>Kanal listeniz, kontrolünüzde.</h1>
-            <p>Kanalları düzenleyin, bağlantıları kontrol edin ve listenizi yanınızda götürün.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
     status_counts = _status_counts(df_display)
     group_count = df_display["Grup"].nunique()
@@ -281,7 +284,8 @@ if not st.session_state.data.empty:
         render_vpn(df_display, get_proxy_server)
 
 else:
-    render_empty_state()
+    with st.container(key="onboarding"):
+        render_empty_state()
 
 # --- Footer ---
 st.markdown(

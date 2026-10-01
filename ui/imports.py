@@ -1,4 +1,4 @@
-"""Atomic sidebar/empty-state imports."""
+"""Atomic onboarding and playlist replacement imports."""
 
 import logging
 import time
@@ -37,7 +37,6 @@ def replace_playlist(frame):
 
 
 def render_source_loader():
-    st.markdown("#### Liste yükle")
     # Son kullanılan linkler geçmişi
     default_url_val = ""
     if st.session_state.recent_urls:
@@ -102,8 +101,6 @@ def render_source_loader():
                 st.success(f"✅ {len(replacement)} kanal bulundu ({time.time() - start:.2f}s)")
             except ValueError as exc:
                 st.error(str(exc))
-
-    st.markdown("---")
 
 
 def render_empty_state():

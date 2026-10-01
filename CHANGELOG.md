@@ -7,6 +7,7 @@
 - Grouped export/network views, collapsible player details and mobile sidebar behavior.
 - Apply the native theme through the installed launcher as well as repository configuration.
 - Fix Community Cloud installation with requirements.txt; keep local uv lockfiles out of deployments and verify Cloud startup in CI.
+- Keep imports in the main area, show the sidebar only for loaded playlist filters, and collapse playlist replacement controls.
 
 ## 2.2.0 — 2026-09-30
 
