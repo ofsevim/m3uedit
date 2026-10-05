@@ -75,21 +75,30 @@ def render_exports(visible, get_proxy_server):
             )
 
     with st.expander("Harici bir servisle paylaş"):
-        service = st.selectbox("Paylaşım servisi", ["paste.rs", "dpaste.com"])
+        service = st.selectbox("Paylaşım servisi", ["dpaste.com", "catbox.moe", "paste.rs"])
+        st.caption(
+            "Boyut sınırları: dpaste.com (1 MB) · catbox.moe (50 MB, büyük listeler için) · paste.rs (64 KB)"
+        )
         consent = st.checkbox(
             f"Listenin tamamının ve URL içindeki erişim bilgilerinin {service} servisine gönderilmesini kabul ediyorum.",
             key="share_consent_" + service,
         )
         if st.button("🌐 Harici Paylaşım Linki Oluştur", disabled=not consent, width="stretch"):
-            try:
-                st.session_state.m3u_cloud_link = network.create_m3u_link(
-                    convert_df_to_m3u(frame),
-                    user_agent=config.USER_AGENT,
-                    service=service,
-                    consent=consent,
-                )
-            except (ValueError, OSError) as exc:
-                st.error(f"Paylaşım başarısız ({type(exc).__name__}).")
+            if frame.empty:
+                st.warning("Paylaşılacak kanal bulunamadı.")
+            else:
+                try:
+                    with st.spinner("Paylaşım linki oluşturuluyor..."):
+                        st.session_state.m3u_cloud_link = network.create_m3u_link(
+                            convert_df_to_m3u(frame),
+                            user_agent=config.USER_AGENT,
+                            timeout=config.REQUEST_TIMEOUT,
+                            service=service,
+                            consent=consent,
+                            proxy_url=st.session_state.get("upstream_proxy") or None,
+                        )
+                except (ValueError, OSError) as exc:
+                    st.error(f"Paylaşım başarısız: {exc}")
         if st.session_state.get("m3u_cloud_link"):
             st.code(st.session_state.m3u_cloud_link, language=None)
 

@@ -24,8 +24,8 @@ proxy_url=None, headers=None)` sınırlı byte satırları döndürür.
 ortak URL/IP/TLS/yönlendirme politikasını uygular; dönen response context manager ile kapatılmalıdır.
 `read_bounded(response, max_bytes, deadline_seconds=30)` Content-Length olmasa da boyutu ve süreyi sınırlar;
 yavaş chunk başlıklarında süre dolunca bağlantı kapatılır.
-`create_m3u_link(content, user_agent=..., service="paste.rs", consent=False)`
-yalnızca açık onayla seçilen HTTPS servisine gönderir; hataları çağırana iletir.
+`create_m3u_link(content, user_agent=..., timeout=30, service="dpaste.com", consent=False, proxy_url=None)`
+yalnızca açık onayla seçilen HTTPS servisine (`dpaste.com`, `catbox.moe`, `paste.rs`) gönderir; hataları çağırana iletir.
 
 `utils.parser.batch_check_health(urls, max_workers=50, timeout=3.0, user_agent=None,
 proxy_url=None, headers=None, progress_callback=None)` sıra korunmuş durum listesi döndürür.

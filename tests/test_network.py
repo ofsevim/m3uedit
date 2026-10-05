@@ -70,6 +70,36 @@ def test_share_service_cannot_return_another_host():
             network.create_m3u_link("#EXTM3U", user_agent="Test", consent=True)
 
 
+def test_paste_rs_rejects_oversized_and_partial_uploads():
+    oversized = "#EXTM3U\n" + ("#EXTINF:-1,Ch\nhttps://example.com/1.m3u8\n" * 2000)
+    with pytest.raises(ValueError, match="64 KB"):
+        network.create_m3u_link(
+            oversized, user_agent="Test", service="paste.rs", consent=True
+        )
+
+    partial = MockResponse(b"https://paste.rs/abc")
+    partial.status = 206
+    with patch.object(network, "open_url", return_value=partial):
+        with pytest.raises(ValueError, match="eksik"):
+            network.create_m3u_link(
+                "#EXTM3U\n", user_agent="Test", service="paste.rs", consent=True
+            )
+
+
+def test_catbox_service_returns_verified_files_link():
+    with patch.object(
+        network, "open_url", return_value=MockResponse(b"https://files.catbox.moe/abc123.m3u")
+    ):
+        link = network.create_m3u_link(
+            "#EXTM3U\n#EXTINF:-1,Test\nhttps://example.com/1.m3u8\n",
+            user_agent="Test",
+            service="catbox.moe",
+            consent=True,
+        )
+    assert link == "https://files.catbox.moe/abc123.m3u"
+
+
+
 def test_fetch_m3u_source_with_headers_and_proxy():
     received = []
 

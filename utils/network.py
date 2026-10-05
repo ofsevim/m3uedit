@@ -2,10 +2,12 @@
 
 import functools
 import http.client
+import secrets
 import socket
 import ssl
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -213,41 +215,125 @@ def fetch_m3u_source(
         ).splitlines(keepends=True)
 
 
+PASTE_RS_MAX_BYTES = 64 * 1024
+DPASTE_MAX_BYTES = 1000 * 1000
+_SHARE_HOSTS = {
+    "paste.rs": ("paste.rs",),
+    "dpaste.com": ("dpaste.com",),
+    "catbox.moe": ("catbox.moe", "files.catbox.moe"),
+}
+
+
+def _encode_multipart(
+    fields: dict[str, str],
+    file_field: tuple[str, str, bytes, str] | None = None,
+) -> tuple[bytes, str]:
+    boundary = f"----M3UEditBoundary{secrets.token_hex(16)}"
+    parts: list[bytes] = []
+    for name, value in fields.items():
+        parts.append(
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+            f"{value}\r\n".encode("utf-8")
+        )
+    if file_field is not None:
+        field_name, filename, content, content_type = file_field
+        parts.append(
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n".encode("utf-8")
+            + content
+            + b"\r\n"
+        )
+    parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
 def create_m3u_link(
     m3u_content: str,
     *,
     user_agent: str,
     disable_ssl_verify=False,
-    timeout=15,
-    service="paste.rs",
+    timeout=30,
+    service="dpaste.com",
     consent=False,
+    proxy_url=None,
 ) -> str:
     """Explicit, verified HTTPS publishing; never silently switch services."""
     if not consent:
         raise ValueError("Harici paylaşım için açık onay gerekli.")
+    if not m3u_content or not m3u_content.strip():
+        raise ValueError("Paylaşılacak M3U içeriği boş.")
+    raw_bytes = m3u_content.encode("utf-8")
+    max_bytes = config.MAX_FILE_SIZE_MB * 1024 * 1024
+    if len(raw_bytes) > max_bytes:
+        raise ValueError("Dosya boyutu sınırı aşıldı.")
     if service == "paste.rs":
+        if len(raw_bytes) > PASTE_RS_MAX_BYTES:
+            raise ValueError(
+                "Liste boyutu paste.rs sınırını (64 KB) aşıyor. "
+                "Lütfen dpaste.com veya catbox.moe servisini seçin."
+            )
         url = "https://paste.rs/"
-        data = m3u_content.encode("utf-8")
-        headers = {"Content-Type": "text/plain"}
+        data = raw_bytes
+        headers = {"Content-Type": "text/plain; charset=utf-8"}
     elif service == "dpaste.com":
+        if len(raw_bytes) > DPASTE_MAX_BYTES:
+            raise ValueError(
+                "Liste boyutu dpaste.com sınırını (1 MB) aşıyor. "
+                "Daha büyük listeler için catbox.moe servisini seçin."
+            )
         url = "https://dpaste.com/api/v2/"
-        data = urllib.parse.urlencode(
-            {"content": m3u_content, "syntax": "text", "expiry_days": 1}
-        ).encode()
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        data, content_type = _encode_multipart(
+            {"syntax": "text", "expiry_days": "1", "content": m3u_content}
+        )
+        headers = {"Content-Type": content_type}
+    elif service == "catbox.moe":
+        url = "https://catbox.moe/user/api.php"
+        data, content_type = _encode_multipart(
+            {"reqtype": "fileupload"},
+            ("fileToUpload", "playlist.m3u", raw_bytes, "audio/x-mpegurl"),
+        )
+        headers = {"Content-Type": content_type}
     else:
         raise ValueError("Desteklenmeyen paylaşım servisi.")
-    if len(data) > config.MAX_FILE_SIZE_MB * 1024 * 1024:
+    if len(data) > max_bytes + 4096:
         raise ValueError("Dosya boyutu sınırı aşıldı.")
     request = urllib.request.Request(url, data=data, headers={"User-Agent": user_agent, **headers})
+    open_kwargs = {"timeout": timeout, "disable_ssl_verify": False, "allow_private": False}
+    if proxy_url:
+        open_kwargs["proxy_url"] = proxy_url
     # Publishing always verifies TLS, even if a local IPTV source opted out.
-    with open_url(
-        request, timeout=timeout, disable_ssl_verify=False, allow_private=False
-    ) as response:
-        link = read_bounded(response, 4096, deadline_seconds=timeout).decode().strip().strip('"')
+    try:
+        with open_url(request, **open_kwargs) as response:
+            status = getattr(response, "status", 200)
+            link = (
+                read_bounded(response, 4096, deadline_seconds=timeout).decode().strip().strip('"')
+            )
+            if status == 206:
+                raise ValueError(
+                    f"{service} içeriği eksik kaydetti (boyut sınırı aşıldı). "
+                    "Lütfen dpaste.com veya catbox.moe servisini seçin."
+                )
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        if exc.code == 413:
+            raise ValueError(
+                f"Liste boyutu {service} servisinin kabul ettiği sınırı aşıyor (HTTP 413)."
+            ) from exc
+        if exc.code in (429, 503):
+            raise OSError(
+                f"{service} servisi şu anda yoğun veya hız sınırına takıldı (HTTP {exc.code}). "
+                "Farklı bir paylaşım servisi seçip tekrar deneyin."
+            ) from exc
+        raise OSError(
+            f"{service} servisi isteği reddetti (HTTP {exc.code}). "
+            "Farklı bir paylaşım servisi seçip tekrar deneyin."
+        ) from exc
     parsed = validate_url(link)
-    if parsed.scheme != "https" or parsed.hostname != service:
+    if parsed.scheme != "https" or parsed.hostname not in _SHARE_HOSTS[service]:
         raise ValueError("Paylaşım servisi geçersiz bağlantı döndürdü.")
     if service == "dpaste.com" and not link.endswith(".txt"):
         link = link.rstrip("/") + ".txt"
     return link
+
