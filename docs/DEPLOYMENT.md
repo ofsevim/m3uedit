@@ -73,4 +73,9 @@ Bkz. [Community Cloud bağımlılık dosyası önceliği](https://docs.streamlit
 Streamlit Community Cloud ve bazı managed platformlar ikinci portu dışarı açmaz.
 Bu platformlarda düzenleme/indirme/sağlık kontrolü çalışır; yerel proxy oynatımı için ulaşılabilir
 bir gateway gerekir. Doğrudan oynatma seçeneği sağlayıcının HTTPS/CORS desteğine bağlıdır.
+Oynatıcı uzak sayfada localhost proxy'sini kullanmaz; HTTPS yayını doğrudan açmayı dener.
+`extension=ts` içeren yayınlar MPEG-TS motoruyla açılır. HTTP yayınını HTTPS sayfasında
+izlemek için `PROXY_PUBLIC_BASE_URL` ile erişilebilir bir HTTPS gateway yapılandırılmalıdır;
+bu ayar tek başına gateway oluşturmaz. Gateway yoksa kanalı indirip VLC ile açın veya
+uygulamayı yerelde çalıştırın.
 CORS veya XSRF korumasını kapatmayın. Upstream proxy seçilirse onun DNS/egress davranışı güvenilir kabul edilir.

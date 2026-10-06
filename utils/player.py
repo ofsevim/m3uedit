@@ -84,6 +84,20 @@ def render_live_player(
 
         /* ── Proxy zinciri ── */
         var PROXIES = {proxies};
+        // srcdoc inherits its base URI even when the referrer is suppressed.
+        var pageUrl = new URL(document.referrer || document.baseURI || window.location.href);
+        function isLoopback(host) {{
+            return host === 'localhost' || host.endsWith('.localhost')
+                || /^127[.]/.test(host) || host === '[::1]';
+        }}
+        if (PROXIES[0].fn) {{
+            var proxyUrl = new URL(proxyBase, pageUrl);
+            var remoteLoopback = isLoopback(proxyUrl.hostname) && !isLoopback(pageUrl.hostname);
+            var insecureProxy = pageUrl.protocol === 'https:' && proxyUrl.protocol === 'http:';
+            if (remoteLoopback || insecureProxy) {{
+                PROXIES = [{{name:'Doğrudan', fn:null}}];
+            }}
+        }}
 
         function log(m) {{
             console.log('[IPTV]', m);
@@ -118,15 +132,21 @@ def render_live_player(
             log('▶ Deneme ' + idx + ': ' + p.name);
             show('🔄 ' + p.name + ' deneniyor...', false);
 
-            var lower = origUrl.toLowerCase();
-            var path = new URL(origUrl).pathname.toLowerCase();
-            var isTS = path.endsWith('.ts');
+            var streamUrl = new URL(origUrl);
+            var path = streamUrl.pathname.toLowerCase();
+            var extension = (streamUrl.searchParams.get('extension') || '').toLowerCase();
+            var isTS = path.endsWith('.ts') || extension === 'ts';
             var isMP4 = path.endsWith('.mp4') || path.endsWith('.webm');
             var isDASH = path.endsWith('.mpd');
             var isHLS = !isTS && !isMP4 && !isDASH && (
-                path.endsWith('.m3u8') || lower.indexOf('m3u8') !== -1
+                path.endsWith('.m3u8') || extension === 'm3u8'
                 || path.indexOf('/live/') !== -1 || path.indexOf('/hls') !== -1
                 || path.indexOf('playlist') !== -1);
+
+            if (!p.fn && pageUrl.protocol === 'https:' && streamUrl.protocol === 'http:') {{
+                showFail('Bu HTTP yayınını HTTPS sayfasında oynatmak için erişilebilir bir HTTPS proxy gerekir. Kanalı indirip VLC ile açabilir veya uygulamayı yerelde çalıştırabilirsiniz.');
+                return;
+            }}
 
             /* ── HLS Oynatma ── */
             if (typeof Hls !== 'undefined' && Hls.isSupported() && (isHLS || (!isTS && !isMP4 && !isDASH))) {{
@@ -233,8 +253,8 @@ def render_live_player(
         }}
 
         /* ── Başarısız UI ── */
-        function showFail() {{
-            show('Oynatılamadı. Akış, ağ ve proxy ayarlarını kontrol edin.', true);
+        function showFail(message) {{
+            show(message || 'Oynatılamadı. Sağlık kontrolü tarayıcıda oynatmayı doğrulamaz. Doğrudan yayın için sağlayıcının HTTPS/CORS desteği, proxy ile yayın için erişilebilir bir HTTPS proxy gerekir.', true);
             var box = document.getElementById('psb');
             var retry = document.createElement('button');
             retry.className = 'abtn abtn-blue';
