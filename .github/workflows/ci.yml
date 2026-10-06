@@ -31,7 +31,7 @@ jobs:
 
           app = AppTest.from_file("app.py").run(timeout=30)
           assert not app.exception, app.exception
-          assert any("Yayın listenize" in item.value for item in app.markdown)
+          assert app.text_input(key="quick_c_url").label == "M3U Bağlantısı:"
           PY
 
   test:
