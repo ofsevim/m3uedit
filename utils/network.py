@@ -156,10 +156,13 @@ def read_bounded(response, max_bytes: int, *, deadline_seconds: float = 30) -> b
     read = getattr(response, "read1", response.read)
     sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
     socket_timeout = sock.gettimeout() if sock else None
+    deadline_interrupted = threading.Event()
 
     def interrupt():
         # A chunk-size/trailer line can drip forever inside HTTPResponse.readline.
         # Shutdown wakes that read even if individual bytes never hit its socket timeout.
+        # Windows timers can fire just before monotonic() reaches the deadline.
+        deadline_interrupted.set()
         try:
             sock.shutdown(socket.SHUT_RDWR)
         except OSError:
@@ -179,10 +182,10 @@ def read_bounded(response, max_bytes: int, *, deadline_seconds: float = 30) -> b
             try:
                 chunk = read(min(64 * 1024, max_bytes - size + 1))
             except (OSError, http.client.HTTPException) as exc:
-                if time.monotonic() >= deadline:
+                if deadline_interrupted.is_set() or time.monotonic() >= deadline:
                     raise TimeoutError("İndirme süresi sınırı aşıldı.") from exc
                 raise
-            if time.monotonic() >= deadline:
+            if deadline_interrupted.is_set() or time.monotonic() >= deadline:
                 raise TimeoutError("İndirme süresi sınırı aşıldı.")
             if not chunk:
                 break

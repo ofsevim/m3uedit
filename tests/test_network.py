@@ -1,6 +1,7 @@
 import io
 import ssl
 import time
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -158,6 +159,50 @@ def test_redirect_bodies_are_not_drained():
         )
     assert result == "redirected"
     assert consumed == []
+
+
+def test_deadline_shutdown_reports_timeout_when_timer_fires_before_clock_boundary():
+    class Socket:
+        interrupted = False
+
+        def gettimeout(self):
+            return None
+
+        def fileno(self):
+            return 1
+
+        def settimeout(self, timeout):
+            pass
+
+        def shutdown(self, how):
+            self.interrupted = True
+
+    sock = Socket()
+
+    class Response:
+        headers = {}
+        fp = SimpleNamespace(raw=SimpleNamespace(_sock=sock))
+
+        def read(self, size):
+            assert sock.interrupted
+            raise ConnectionAbortedError(10053, "Connection aborted by deadline shutdown")
+
+    class EarlyTimer:
+        def __init__(self, interval, callback):
+            self.callback = callback
+
+        def start(self):
+            self.callback()
+
+        def cancel(self):
+            pass
+
+    with (
+        patch.object(network.threading, "Timer", EarlyTimer),
+        patch.object(network.time, "monotonic", return_value=100),
+        pytest.raises(TimeoutError, match="süresi"),
+    ):
+        network.read_bounded(Response(), 100, deadline_seconds=0.12)
 
 
 def test_download_deadline_interrupts_dripping_body():
