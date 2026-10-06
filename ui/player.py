@@ -46,15 +46,13 @@ def render_player(df_display, get_proxy_server):
                 default_index = i + 1
                 break
 
-    p_left, p_right = st.columns([1.3, 2.7])
+    p_left, p_right = st.columns([1.1, 2.9])
     with p_left:
-        st.markdown("##### 📻 Kanal Seçimi")
         play_name_display = st.selectbox(
-            "Oynatılacak Kanal",
+            "Kanal seçin",
             options=["Seçiniz..."] + play_options,
             index=default_index,
             key="player_tab_select_box",
-            label_visibility="collapsed",
         )
         if play_name_display != "Seçiniz...":
             selected_info = play_url_map.get(play_name_display)
@@ -74,29 +72,16 @@ def render_player(df_display, get_proxy_server):
 
         if st.session_state.play_channel:
             pc = st.session_state.play_channel
-            st.markdown("---")
             if pc.get("logo"):
                 try:
                     validate_url(pc["logo"])
-                    st.image(pc["logo"], width=100)
+                    st.image(pc["logo"], width=72)
                 except (ValueError, OSError):
-                    st.caption("Logo adresi kullanılamıyor.")
-            st.markdown(f"**Kanal:** {pc['name']}")
-            st.markdown(f"**Grup:** {pc.get('group', 'Genel')}")
+                    pass
+            st.caption(f"{pc.get('group', 'Genel')} · {pc.get('durum', '❔')}")
 
             if "VPN" in pc.get("durum", ""):
-                st.warning("🌍 Bölgesel Kısıtlama (VPN gerekebilir).")
-            elif "CORS" in pc.get("durum", ""):
-                st.info("⚠️ CORS Kısıtlı — Yerel proxy aktif.")
-            else:
-                st.markdown(f"**Durum:** {pc.get('durum', '❔')}")
-
-            proxy_srv = get_proxy_server()
-            with st.expander("Bağlantı ayrıntıları"):
-                st.caption("Akış adresi")
-                st.code(pc["url"], language=None)
-                st.caption("Yerel proxy adresi")
-                st.code(proxy_srv.get_proxy_url(pc["url"], public=True), language=None)
+                st.warning("🌍 Bölgesel kısıtlama (VPN gerekebilir)")
 
             b_stop, b_dl = st.columns(2)
             with b_stop:
@@ -106,18 +91,24 @@ def render_player(df_display, get_proxy_server):
                     st.session_state.data[st.session_state.data["URL"] == pc["url"]].head(1)
                 )
                 st.download_button(
-                    "📥 Bu Kanalı İndir",
+                    "📥 İndir",
                     data=single_m3u,
                     file_name=f"{pc['name']}.m3u",
                     width="stretch",
                 )
+
+            proxy_srv = get_proxy_server()
+            with st.expander("Bağlantı adresleri"):
+                st.caption("Akış URL")
+                st.code(pc["url"], language=None)
+                st.caption("Yerel proxy URL")
+                st.code(proxy_srv.get_proxy_url(pc["url"], public=True), language=None)
         else:
-            st.info("👈 Kanal seçtiğinizde yayın otomatik başlar.")
+            st.caption("İzlemek istediğiniz kanalı listeden seçin.")
 
     with p_right:
         if st.session_state.play_channel:
             pc = st.session_state.play_channel
-            st.markdown(f"#### ▶ {pc['name']}")
             if ENABLE_LIVE_PLAYER:
                 proxy_base = get_proxy_server().endpoint_url("proxy", public=True)
                 player_html = render_live_player(
@@ -127,17 +118,17 @@ def render_player(df_display, get_proxy_server):
                     use_proxy=st.session_state.get("use_player_proxy", True),
                 )
                 if hasattr(st, "iframe"):
-                    st.iframe(player_html, height=460)
+                    st.iframe(player_html, height=450)
                 else:
-                    components.html(player_html, height=460)
+                    components.html(player_html, height=450)
             else:
                 st.info("Canlı oynatıcı yapılandırmada kapalı.")
         else:
             st.markdown(
                 "<div class='player-placeholder'>"
                 "<span class='player-placeholder__icon' aria-hidden='true'>▷</span>"
-                "<h3>İzlemeye hazır.</h3>"
-                "<p>Kanal seçiminizi yapın.<br>Canlı yayın burada başlayacak.</p>"
+                "<p>Soldan bir kanal seçtiğinizde yayın burada başlar.</p>"
                 "</div>",
                 unsafe_allow_html=True,
             )
+

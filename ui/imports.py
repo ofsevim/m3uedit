@@ -37,22 +37,33 @@ def replace_playlist(frame):
 
 
 def render_source_loader():
-    # Son kullanılan linkler geçmişi
     default_url_val = ""
     if st.session_state.recent_urls:
         chosen_recent = st.selectbox(
-            "🕒 Son Kullanılan Linkler:",
+            "Son kullanılan linkler",
             ["(Yeni Link Girin...)"] + st.session_state.recent_urls,
             key="recent_url_selector",
         )
         if chosen_recent != "(Yeni Link Girin...)":
             default_url_val = chosen_recent
 
-    url = st.text_input("🌐 M3U Linki Yapıştır:", value=default_url_val)
-    uploaded_file = st.file_uploader("📂 veya M3U Dosyası Yükle", type=["m3u", "m3u8"])
-    only_tr = st.checkbox("🇹🇷 Sadece TR Kanalları", value=DEFAULT_TR_FILTER)
+    col_url, col_file = st.columns(2)
+    with col_url:
+        url = st.text_input(
+            "🌐 M3U Linki Yapıştır:",
+            value=default_url_val,
+            placeholder="https://example.com/playlist.m3u",
+        )
+    with col_file:
+        uploaded_file = st.file_uploader("📂 veya M3U Dosyası Yükle", type=["m3u", "m3u8"])
 
-    if st.button("🚀 Listeyi Çek ve Tara", width="stretch", type="primary"):
+    opt_col, btn_col = st.columns([1, 1])
+    with opt_col:
+        only_tr = st.checkbox("🇹🇷 Sadece TR Kanalları", value=DEFAULT_TR_FILTER)
+    with btn_col:
+        submit = st.button("🚀 Listeyi Çek ve Tara", width="stretch", type="primary")
+
+    if submit:
         source_lines = None
         start = time.time()
         if url:
@@ -73,7 +84,6 @@ def render_source_loader():
                         proxy_url=st.session_state.upstream_proxy or None,
                         headers=req_headers or None,
                     )
-                    # Başarılı ise son kullanılan linklere ekle
                     if url and url not in st.session_state.recent_urls:
                         st.session_state.recent_urls.insert(0, url)
                         st.session_state.recent_urls = st.session_state.recent_urls[:5]
@@ -107,15 +117,8 @@ def render_empty_state():
     st.markdown(
         """
         <div class='hero'>
-            <span class='eyebrow'>M3U · IPTV ÇALIŞMA ALANI</span>
-            <h1>Yayın listenize<br><span class='hero-accent'>yeni bir düzen.</span></h1>
-            <p>Kanallarınızı tek bir yerde düzenleyin, çalışan yayınları bulun
-            ve favori listenizi istediğiniz cihazda kullanın.</p>
-            <div class='workflow'>
-                <span><b>01</b>Listenizi yükleyin</span>
-                <span><b>02</b>Düzenleyin & kontrol edin</span>
-                <span><b>03</b>İzleyin & dışa aktarın</span>
-            </div>
+            <h1>📺 M3U Editör Pro</h1>
+            <p>M3U bağlantınızı yapıştırın veya dosyanızı seçerek hemen başlayın.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -123,11 +126,7 @@ def render_empty_state():
 
     card_c1, card_c2 = st.columns(2)
     with card_c1, st.container(key="import_url"):
-        st.markdown(
-            "<div class='section-heading'><span class='eyebrow'>BAĞLANTI İLE</span>"
-            "<h3>Listenizi içe aktarın</h3><p>M3U veya M3U8 bağlantınızı yapıştırın.</p></div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown("#### 🌐 Bağlantı ile yükle")
         quick_url = st.text_input(
             "M3U Bağlantısı:", placeholder="https://example.com/playlist.m3u", key="quick_c_url"
         )
@@ -159,18 +158,14 @@ def render_empty_state():
                 st.warning("Lütfen bir link girin.")
 
     with card_c2, st.container(key="import_file"):
-        st.markdown(
-            "<div class='section-heading'><span class='eyebrow'>DOSYA İLE</span>"
-            "<h3>Dosyanızı yükleyin</h3><p>Hazır listenizi sürükleyip bırakın.</p></div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown("#### 📂 Dosya yükle")
         center_file = st.file_uploader(
             "M3U / M3U8 Dosyası Bırakın", type=["m3u", "m3u8"], key="quick_c_file"
         )
-        st.caption("Yükleme tamamlandığında kanal çalışma alanınız açılır.")
         if center_file:
             try:
                 replace_playlist(import_playlist(center_file.getvalue(), only_tr=DEFAULT_TR_FILTER))
                 st.rerun()
             except ValueError as exc:
                 st.error(str(exc))
+

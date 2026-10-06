@@ -122,18 +122,7 @@ if vc is not None and "visited" not in st.session_state:
 
 # Import replacement runs before filter widgets so their selections can be reset.
 if not st.session_state.data.empty:
-    st.markdown(
-        """
-        <div class="page-header">
-            <span class="eyebrow">ÇALIŞMA ALANI</span>
-            <h1>Kanal listeniz, kontrolünüzde.</h1>
-            <p>Kanalları düzenleyin, bağlantıları kontrol edin ve listenizi yanınızda götürün.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
     with st.expander("Yeni liste yükle"):
-        st.caption("Yeni liste başarıyla yüklendiğinde mevcut listenizin yerini alır.")
         render_source_loader()
 
 # =====================================================================
@@ -148,38 +137,23 @@ if not st.session_state.data.empty:
     with st.sidebar:
         st.markdown(
             "<div class='sidebar-brand'>"
-            "<span class='sidebar-brand__icon' aria-hidden='true'>▤</span>"
+            "<span class='sidebar-brand__icon' aria-hidden='true'>📺</span>"
             "<div>"
-            "<span class='sidebar-brand__title'>M3U Editör Pro</span>"
-            "<span class='sidebar-brand__subtitle'>Kanal çalışma alanınız</span>"
+            "<span class='sidebar-brand__title'>M3U Editör</span>"
+            f"<span class='sidebar-brand__subtitle'>{'Proxy aktif' if st.session_state.upstream_proxy else 'Doğrudan bağlantı'}</span>"
             "</div>"
             "</div>",
             unsafe_allow_html=True,
         )
 
-        # Ağ & Proxy mini durum göstergesi
-        if st.session_state.upstream_proxy:
-            st.markdown(
-                "<div class='connection-status connection-status--active'><span class='status-dot'></span>Proxy yapılandırıldı</div>",
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                "<div class='connection-status'><span class='status-dot'></span>Doğrudan bağlantı</div>",
-                unsafe_allow_html=True,
-            )
-
-        st.markdown("---")
-
         # Filtreler
-        st.markdown("#### Liste filtreleri")
         try:
             group_options = sorted(st.session_state.data["Grup"].astype(str).dropna().unique())
         except Exception:
             group_options = []
         if group_options:
             selected_groups = st.multiselect(
-                "Grupları filtrele", group_options, default=None, key="group_filter"
+                "Grup", group_options, default=None, key="group_filter", placeholder="Tümü"
             )
 
         type_options = sorted(
@@ -187,28 +161,23 @@ if not st.session_state.data.empty:
         )
         if type_options:
             selected_types = st.multiselect(
-                "Yayın türü", type_options, default=None, key="type_filter"
+                "Yayın türü", type_options, default=None, key="type_filter", placeholder="Tümü"
             )
         status_options = sorted(
             st.session_state.data.get("Durum", pd.Series(dtype=str)).astype(str).dropna().unique()
         )
         if status_options:
             selected_statuses = st.multiselect(
-                "Duruma göre", status_options, default=None, key="status_filter"
+                "Durum", status_options, default=None, key="status_filter", placeholder="Tümü"
             )
 
-        # İstatistikler
         if vc is not None:
             stats = vc.get_stats()
             try:
                 last_visit = datetime.fromisoformat(stats["last_visit"]).strftime("%d.%m.%Y %H:%M")
             except (ValueError, KeyError):
                 last_visit = "—"
-            with st.expander("Kullanım istatistikleri"):
-                st.caption(
-                    f"{stats['total_visits']} ziyaret · {stats['unique_visitors']} tekil ziyaretçi"
-                )
-                st.caption(f"Son ziyaret: {last_visit}")
+            st.caption(f"👥 {stats['total_visits']} ziyaret · Son: {last_visit}")
 
 # =====================================================================
 # ANA EKRAN
@@ -227,35 +196,40 @@ if not st.session_state.data.empty:
 
     status_counts = _status_counts(df_display)
     group_count = df_display["Grup"].nunique()
-    hls_count = int((df_display["Tür"] == "HLS").sum()) if "Tür" in df_display.columns else 0
 
-    with st.container(key="workspace_summary"):
-        mc1, mc2, mc3, mc4, mc5 = st.columns(5)
-        mc1.metric("Görünen / toplam kanal", f"{len(df_display)} / {len(st.session_state.data)}")
-        mc2.metric("Kanal grubu", group_count)
-        mc3.metric("Aktif bağlantı", status_counts["active"])
-        mc4.metric("Bölgesel kısıtlama", status_counts["vpn"])
-        mc5.metric("HLS yayını", hls_count)
-        if status_counts["pending"]:
-            st.caption(f"{status_counts['pending']} kanal henüz kontrol edilmedi.")
+    summary_parts = [
+        f"<strong>{len(df_display)}</strong> / {len(st.session_state.data)} kanal",
+        f"<strong>{group_count}</strong> grup",
+    ]
+    if status_counts["active"]:
+        summary_parts.append(f"✅ <strong>{status_counts['active']}</strong> aktif")
+    if status_counts["vpn"]:
+        summary_parts.append(f"🌍 <strong>{status_counts['vpn']}</strong> VPN")
+    if status_counts["error"]:
+        summary_parts.append(f"❌ <strong>{status_counts['error']}</strong> hatalı")
 
-    active_filters = []
-    active_filters.extend(f"Grup: {value}" for value in selected_groups)
-    active_filters.extend(f"Tür: {value}" for value in selected_types)
-    active_filters.extend(f"Durum: {value}" for value in selected_statuses)
-    if active_filters:
-        st.markdown(
-            f"<div class='simple-strip'><strong>Aktif Filtreler:</strong> <span>{html.escape(' • '.join(active_filters))}</span></div>",
-            unsafe_allow_html=True,
-        )
+    active_filters = [
+        *(f"Grup: {v}" for v in selected_groups),
+        *(f"Tür: {v}" for v in selected_types),
+        *(f"Durum: {v}" for v in selected_statuses),
+    ]
+    filter_badge = (
+        f" <span class='summary-bar__filters'>Filtre: {html.escape(', '.join(active_filters))}</span>"
+        if active_filters
+        else ""
+    )
+    st.markdown(
+        f"<div class='summary-bar'><span>{' · '.join(summary_parts)}</span>{filter_badge}</div>",
+        unsafe_allow_html=True,
+    )
 
     # 4 ANA ODAKLI SEKME
     tab_editor, tab_player, tab_export, tab_vpn = st.tabs(
         [
-            "Kanallar",
-            "Canlı oynatıcı",
-            "Dışa aktar & paylaş",
-            "Ağ ayarları",
+            "📋 Kanallar",
+            "▶ Oynatıcı",
+            "📤 İndir & Paylaş",
+            "⚙️ Ağ / Proxy",
         ]
     )
 

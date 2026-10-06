@@ -23,69 +23,58 @@ def _safe_contains(series, term):
 
 
 def render_editor(df_display):
-    # Arama çubuğu
-    search_term = st.text_input(
-        "🔍 Kanal veya Grup Ara:",
-        "",
-        placeholder="Kanal adı veya grup yazarak anında filtreleyin...",
-        key="tab_search",
-    )
+    t_search, t_limit, t_health, t_add = st.columns([2.8, 0.9, 1.3, 1.0])
+    with t_search:
+        search_term = st.text_input(
+            "🔍 Kanal veya Grup Ara:",
+            "",
+            placeholder="🔍 Kanal adı veya grup ara...",
+            label_visibility="collapsed",
+            key="tab_search",
+        )
     if search_term:
         df_display = df_display[
             _safe_contains(df_display["Kanal Adı"], search_term)
             | _safe_contains(df_display["Grup"], search_term)
         ]
 
-    # Hızlı Aksiyonlar
-    st.caption("Tablodaki değişiklikleri uygulamak için alttaki kaydet düğmesini kullanın.")
-    act1, act2, act3, act4 = st.columns([2.4, 1.4, 1.4, 1.2])
-
-    with act1:
-        c_sel, c_btn = st.columns([1, 1.4])
-        with c_sel:
-            h_limit = st.selectbox(
-                "Tarama Limiti",
-                [50, 100, 250, 500, "Tümü"],
-                index=0,
-                label_visibility="collapsed",
-                key="h_limit_sel_editor",
-            )
-        with c_btn:
-            run_health = st.button(
-                "🔍 Sağlık Kontrolü",
-                width="stretch",
-                type="primary",
-                disabled=not ENABLE_URL_HEALTH_CHECK,
-            )
-
-    with act2:
-        has_dead = bool(
-            (
-                st.session_state.data["Durum"]
-                .astype(str)
-                .str.contains("❌|⏱️|Geçersiz|Bulunamadı", na=False)
-            ).any()
+    with t_limit:
+        h_limit = st.selectbox(
+            "Tarama Limiti",
+            [50, 100, 250, 500, "Tümü"],
+            index=0,
+            label_visibility="collapsed",
+            key="h_limit_sel_editor",
         )
-        clean_dead = st.button(
-            "🧹 Ölüleri Temizle",
+    with t_health:
+        run_health = st.button(
+            "🔍 Sağlık Kontrolü",
             width="stretch",
-            disabled=not has_dead,
-            help="❌ ve ⏱️ durumundaki kanalları listeden çıkarır.",
+            type="primary",
+            disabled=not ENABLE_URL_HEALTH_CHECK,
         )
-
-    with act3:
-        has_active = bool(
-            (st.session_state.data["Durum"].astype(str).str.contains("✅", na=False)).any()
-        )
-        keep_active = st.button(
-            "⭐ Sadece Çalışanlar",
-            width="stretch",
-            disabled=not has_active,
-            help="Yalnızca '✅ Aktif' kanalları korur.",
-        )
-
-    with act4:
+    with t_add:
         toggle_add = st.button("➕ Kanal Ekle", width="stretch")
+
+    statuses = st.session_state.data["Durum"].astype(str)
+    has_dead = bool(statuses.str.contains("❌|⏱️|Geçersiz|Bulunamadı", na=False).any())
+    has_active = bool(statuses.str.contains("✅", na=False).any())
+    clean_dead = False
+    keep_active = False
+    if has_dead or has_active:
+        c_dead, c_active, _ = st.columns([1.4, 1.4, 3.2])
+        with c_dead:
+            clean_dead = st.button(
+                "🧹 Ölüleri Temizle",
+                width="stretch",
+                disabled=not has_dead,
+            )
+        with c_active:
+            keep_active = st.button(
+                "⭐ Sadece Çalışanlar",
+                width="stretch",
+                disabled=not has_active,
+            )
 
     if run_health:
         max_health = len(df_display) if h_limit == "Tümü" else int(h_limit)
