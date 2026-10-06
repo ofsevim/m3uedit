@@ -12,6 +12,9 @@ Varsayılanlar: uygulama 127.0.0.1:8501, oturum proxy'si 127.0.0.1:8502; TLS aç
 hem dosya/URL okuma sınırlarına uygulanır. Doğrudan `streamlit run app.py` kullanırken
 Streamlit upload sınırını `--server.maxUploadSize 50` ile ayrıca ayarlayabilirsiniz.
 
+HTTPS gateway yapılandırılmamışsa ve varsayılan proxy portu doluysa uygulama boş bir
+port seçer; oluşturulan oturum linkleri bu portu kullanır. HTTPS gateway için port sabit kalır.
+
 ## LAN / Smart TV
 
 `ENABLE_LAN_SHARING=true` yapıp yeniden başlatın. Proxy tüm arayüzlerde dinler.

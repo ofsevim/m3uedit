@@ -1,6 +1,7 @@
 """Authenticated streaming gateway with isolated per-session state."""
 
 import atexit
+import errno
 import http.server
 import os
 import re
@@ -275,9 +276,20 @@ class LocalProxyServer:
             if self.server:
                 return self.port
             if _gateway is None:
-                server = ThreadingTCPServer(
-                    (config.PROXY_BIND_HOST, config.PROXY_PORT), ProxyHandler
-                )
+                try:
+                    server = ThreadingTCPServer(
+                        (config.PROXY_BIND_HOST, config.PROXY_PORT), ProxyHandler
+                    )
+                except OSError as exc:
+                    # Hot reload may leave the previous gateway on the default port.
+                    # Public reverse proxies require their explicitly configured port.
+                    busy = exc.errno == errno.EADDRINUSE or getattr(exc, "winerror", None) in (
+                        10048,
+                        10013,
+                    )
+                    if config.PROXY_PUBLIC_BASE_URL or not busy:
+                        raise
+                    server = ThreadingTCPServer((config.PROXY_BIND_HOST, 0), ProxyHandler)
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
                 _gateway = server, thread

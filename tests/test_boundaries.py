@@ -13,6 +13,38 @@ from utils.proxy_server import LocalProxyServer
 from utils.security import validate_target
 
 
+def test_busy_default_proxy_port_starts_an_independent_session_gateway(monkeypatch):
+    with socket.socket() as occupied:
+        occupied.bind(("127.0.0.1", 0))
+        occupied.listen()
+        busy_port = occupied.getsockname()[1]
+        monkeypatch.setattr(config, "PROXY_PORT", busy_port)
+        proxy = LocalProxyServer()
+        try:
+            proxy.start()
+            assert proxy.port != busy_port
+            proxy.set_m3u_content("#EXTM3U\nNEW-SESSION")
+            with urllib.request.urlopen(proxy.endpoint_url("playlist.m3u"), timeout=2) as response:
+                assert response.read() == b"#EXTM3U\nNEW-SESSION"
+        finally:
+            proxy.stop()
+
+
+def test_busy_gateway_port_is_not_changed_when_public_routing_is_configured(monkeypatch):
+    with socket.socket() as occupied:
+        occupied.bind(("127.0.0.1", 0))
+        occupied.listen()
+        monkeypatch.setattr(config, "PROXY_PORT", occupied.getsockname()[1])
+        monkeypatch.setattr(config, "PROXY_PUBLIC_BASE_URL", "https://gateway.example/relay")
+        proxy = LocalProxyServer()
+        try:
+            with pytest.raises(OSError):
+                proxy.start()
+            assert proxy.server is None
+        finally:
+            proxy.stop()
+
+
 def test_mixed_dns_answer_is_rejected():
     answers = [
         (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 80)),
