@@ -1,4 +1,4 @@
-"""Safe player HTML, with no automatic third-party stream relays."""
+"""Safe player HTML using only the deployment's explicitly selected stream relay."""
 
 import json
 
@@ -6,9 +6,18 @@ from utils.security import validate_url
 
 
 def render_live_player(
-    stream_url: str, height: int = 420, *, proxy_base_url: str = "", use_proxy: bool = True
+    stream_url: str,
+    height: int = 420,
+    *,
+    proxy_base_url: str = "",
+    use_proxy: bool = True,
+    cloud_proxy_base_url: str = "",
+    user_agent: str = "",
+    referer: str = "",
 ) -> str:
     validate_url(stream_url)
+    if cloud_proxy_base_url and validate_url(cloud_proxy_base_url).scheme != "https":
+        raise ValueError("Bulut oynatıcı proxy adresi HTTPS olmalı.")
     url_json = (
         json.dumps(stream_url, ensure_ascii=True)
         .replace("<", "\\u003c")
@@ -16,8 +25,12 @@ def render_live_player(
         .replace("&", "\\u0026")
     )
     proxy_json = json.dumps(proxy_base_url, ensure_ascii=True).replace("<", "\\u003c")
+    cloud_json = json.dumps(cloud_proxy_base_url, ensure_ascii=True).replace("<", "\\u003c")
+    headers_json = json.dumps({"ua": user_agent, "referer": referer}, ensure_ascii=True).replace(
+        "<", "\\u003c"
+    )
     proxies = (
-        '[{name:"Yerel Proxy", fn:function(u){return proxyBase + "&url=" + encodeURIComponent(u);}}]'
+        '[{name:"Proxy", fn:makeProxyUrl}]'
         if use_proxy and proxy_base_url
         else '[{name:"Doğrudan", fn:null}]'
     )
@@ -69,6 +82,10 @@ def render_live_player(
     (function(){{
         var origUrl = {url_json};
         var proxyBase = {proxy_json};
+        var cloudProxyBase = {cloud_json};
+        var providerHeaders = {headers_json};
+        var usingCloudProxy = false;
+        var useProxy = {json.dumps(bool(use_proxy))};
         if (!origUrl) return;
 
         var player = videojs('vp', {{
@@ -90,6 +107,17 @@ def render_live_player(
             return host === 'localhost' || host.endsWith('.localhost')
                 || /^127[.]/.test(host) || host === '[::1]';
         }}
+        function makeProxyUrl(u, format) {{
+            var target = new URL(proxyBase, pageUrl);
+            target.searchParams.set('url', u);
+            if (usingCloudProxy) {{
+                if (format === 'ts') target.searchParams.set('format', 'ts');
+                Object.keys(providerHeaders).forEach(function(key) {{
+                    if (providerHeaders[key]) target.searchParams.set(key, providerHeaders[key]);
+                }});
+            }}
+            return target.toString();
+        }}
         if (PROXIES[0].fn) {{
             var proxyUrl = new URL(proxyBase, pageUrl);
             var remoteLoopback = isLoopback(proxyUrl.hostname) && !isLoopback(pageUrl.hostname);
@@ -97,6 +125,11 @@ def render_live_player(
             if (remoteLoopback || insecureProxy) {{
                 PROXIES = [{{name:'Doğrudan', fn:null}}];
             }}
+        }}
+        if (useProxy && !PROXIES[0].fn && cloudProxyBase && !isLoopback(pageUrl.hostname)) {{
+            proxyBase = cloudProxyBase;
+            usingCloudProxy = true;
+            PROXIES = [{{name:'HTTPS Proxy', fn:makeProxyUrl}}];
         }}
 
         function log(m) {{
@@ -202,7 +235,7 @@ def render_live_player(
 
             /* ── MPEG-TS ── */
             if (isTS && typeof mpegts !== 'undefined' && mpegts.isSupported()) {{
-                var tsUrl = p.fn ? p.fn(origUrl) : origUrl;
+                var tsUrl = p.fn ? p.fn(origUrl, 'ts') : origUrl;
 
                 var m = mpegts.createPlayer({{type:'mpegts', url:tsUrl, isLive:true}});
                 curTs = m;

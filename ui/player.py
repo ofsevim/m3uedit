@@ -3,7 +3,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-from utils.config import ENABLE_LIVE_PLAYER
+from utils.config import ENABLE_LIVE_PLAYER, PLAYER_CLOUD_PROXY_URL, USER_AGENT, USER_AGENT_PROFILES
 from utils.parser import convert_df_to_m3u
 from utils.player import render_live_player
 from utils.security import validate_url
@@ -116,6 +116,11 @@ def render_player(df_display, get_proxy_server):
                     height=420,
                     proxy_base_url=proxy_base,
                     use_proxy=st.session_state.get("use_player_proxy", True),
+                    cloud_proxy_base_url=PLAYER_CLOUD_PROXY_URL,
+                    user_agent=USER_AGENT_PROFILES.get(
+                        st.session_state.selected_ua_profile, USER_AGENT
+                    ),
+                    referer=st.session_state.custom_referer,
                 )
                 if hasattr(st, "iframe"):
                     st.iframe(player_html, height=450)
@@ -131,4 +136,3 @@ def render_player(df_display, get_proxy_server):
                 "</div>",
                 unsafe_allow_html=True,
             )
-

@@ -2,7 +2,30 @@
 
 import streamlit as st
 
-from utils.config import USER_AGENT, USER_AGENT_PROFILES
+from utils.config import PLAYER_CLOUD_PROXY_URL, USER_AGENT, USER_AGENT_PROFILES
+
+
+def _apply_network_settings(get_proxy_server):
+    profile = st.session_state.tab_vpn_profile_select
+    referer = st.session_state.tab_vpn_ref_input.strip()
+    upstream = st.session_state.tab_vpn_proxy_input.strip()
+    get_proxy_server().set_proxy_config(
+        upstream_proxy=upstream,
+        custom_user_agent=USER_AGENT_PROFILES.get(profile, USER_AGENT),
+        custom_referer=referer,
+    )
+    st.session_state.upstream_proxy = upstream
+    st.session_state.selected_ua_profile = profile
+    st.session_state.custom_referer = referer
+
+
+def _sync_network_settings(get_proxy_server):
+    # Widget callbacks run before the player rerenders. Invalid input is reported
+    # in the settings view and does not replace the last validated configuration.
+    try:
+        _apply_network_settings(get_proxy_server)
+    except ValueError:
+        pass
 
 
 def render_vpn(df_display, get_proxy_server):
@@ -15,36 +38,41 @@ def render_vpn(df_display, get_proxy_server):
                 if st.session_state.selected_ua_profile in profile_list
                 else 0
             )
-            cfg_profile = st.selectbox(
+            st.selectbox(
                 "Cihaz Profili (User-Agent)",
                 profile_list,
                 index=p_index,
                 key="tab_vpn_profile_select",
+                on_change=_sync_network_settings,
+                args=(get_proxy_server,),
             )
-            cfg_ref = st.text_input(
+            st.text_input(
                 "Özel Referer Başlığı (Opsiyonel)",
                 value=st.session_state.custom_referer,
                 placeholder="https://iptv-provider.com",
                 key="tab_vpn_ref_input",
+                on_change=_sync_network_settings,
+                args=(get_proxy_server,),
             )
         with c2:
-            cfg_proxy = st.text_input(
+            st.text_input(
                 "Upstream Proxy (HTTP/HTTPS)",
                 value=st.session_state.upstream_proxy,
                 placeholder="http://127.0.0.1:10808",
                 key="tab_vpn_proxy_input",
+                on_change=_sync_network_settings,
+                args=(get_proxy_server,),
             )
-            st.checkbox("Akışı yerel proxy üzerinden oynat", value=True, key="use_player_proxy")
+            st.checkbox("Akışı proxy üzerinden oynat", value=True, key="use_player_proxy")
+            if PLAYER_CLOUD_PROXY_URL:
+                st.caption(
+                    "Bulut oynatıcı HTTPS proxy: "
+                    + PLAYER_CLOUD_PROXY_URL
+                    + " · Kanal adresi ve yayın erişim bilgileri bu sunucuya iletilir."
+                )
 
         try:
-            get_proxy_server().set_proxy_config(
-                upstream_proxy=cfg_proxy.strip(),
-                custom_user_agent=USER_AGENT_PROFILES.get(cfg_profile, USER_AGENT),
-                custom_referer=cfg_ref.strip(),
-            )
-            st.session_state.upstream_proxy = cfg_proxy.strip()
-            st.session_state.selected_ua_profile = cfg_profile
-            st.session_state.custom_referer = cfg_ref.strip()
+            _apply_network_settings(get_proxy_server)
         except ValueError as exc:
             st.error(str(exc))
 
@@ -59,4 +87,3 @@ def render_vpn(df_display, get_proxy_server):
             "- **Upstream Proxy:** Yerel VPN istemcinizin HTTP portunu (örn. `http://127.0.0.1:10808`) girin.\n"
             "- **Smart TV:** *İndir & Paylaş* sekmesinden *VPN Köprüsü M3U* dosyasını veya yerel ağ linkini kullanın."
         )
-

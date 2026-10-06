@@ -61,6 +61,10 @@ DISABLE_SSL_VERIFY = not env_bool("ENABLE_SSL_VERIFY", True)
 ALLOW_PRIVATE_NETWORKS = env_bool("ALLOW_PRIVATE_NETWORKS", False)
 PROXY_BIND_HOST = "0.0.0.0" if env_bool("ENABLE_LAN_SHARING", False) else "127.0.0.1"
 PROXY_PUBLIC_BASE_URL = os.environ.get("PROXY_PUBLIC_BASE_URL", "").rstrip("/")
+# Explicitly selected playback relay for this deployment; local gateways stay local.
+PLAYER_CLOUD_PROXY_URL = os.environ.get(
+    "PLAYER_CLOUD_PROXY_URL", "https://adentv-canli.netlify.app/proxy"
+).strip()
 PROXY_PORT = int(os.environ.get("PROXY_PORT", "8502"))
 PROXY_ALLOWED_ORIGIN = os.environ.get("PROXY_ALLOWED_ORIGIN", "")
 ENABLE_VISITOR_COUNTER = env_bool("ENABLE_VISITOR_COUNTER", True)

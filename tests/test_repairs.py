@@ -194,6 +194,49 @@ def test_new_channel_without_logo_can_be_selected(app):
     assert app.session_state.play_channel["name"] == "New"
 
 
+def test_cloud_ui_routes_http_channel_through_adentv_with_selected_device_profile(app):
+    from urllib.parse import parse_qs, urlsplit
+
+    from tests.test_player import execute_player
+
+    url = "http://provider.example/play?extension=ts&play_token=test"
+    app.session_state.data.loc[0, "URL"] = url
+    app.selectbox(key="tab_vpn_profile_select").set_value("VLC Media Player").run()
+    app.text_input(key="tab_vpn_ref_input").set_value("https://provider.example/").run()
+    selector = app.selectbox(key="player_tab_select_box")
+    selector.set_value(selector.options[1]).run()
+    assert not app.exception
+    result = execute_player(app.get("iframe")[0].proto.srcdoc)
+    assert result["sources"][0]["engine"] == "MPEGTS"
+    target = urlsplit(result["sources"][0]["url"])
+    assert target.netloc == "adentv-canli.netlify.app"
+    assert parse_qs(target.query) == {
+        "url": [url],
+        "format": ["ts"],
+        "ua": ["VLC/3.0.18 LibVLC/3.0.18"],
+        "referer": ["https://provider.example/"],
+    }
+
+
+def test_changing_headers_during_playback_updates_the_cloud_stream_immediately(app):
+    from urllib.parse import parse_qs, urlsplit
+
+    from tests.test_player import execute_player
+
+    app.session_state.data.loc[0, "URL"] = "http://provider.example/live.ts"
+    app.run()
+    selector = app.selectbox(key="player_tab_select_box")
+    selector.set_value(selector.options[1]).run()
+    app.selectbox(key="tab_vpn_profile_select").set_value("VLC Media Player").run()
+    result = execute_player(app.get("iframe")[0].proto.srcdoc)
+    params = parse_qs(urlsplit(result["sources"][0]["url"]).query)
+    assert params["ua"] == ["VLC/3.0.18 LibVLC/3.0.18"]
+    app.text_input(key="tab_vpn_ref_input").set_value("https://provider.example/").run()
+    result = execute_player(app.get("iframe")[0].proto.srcdoc)
+    params = parse_qs(urlsplit(result["sources"][0]["url"]).query)
+    assert params["referer"] == ["https://provider.example/"]
+
+
 def test_stop_player_clears_selection(app):
     selector = app.selectbox(key="player_tab_select_box")
     selector.set_value(selector.options[1]).run()

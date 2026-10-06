@@ -11,8 +11,31 @@ from utils.player import render_live_player
 
 
 def run_player(
-    url, *, page="https://m3uedit.streamlit.app/", proxy="", use_proxy=True, referrer=None
+    url,
+    *,
+    page="https://m3uedit.streamlit.app/",
+    proxy="",
+    use_proxy=True,
+    referrer=None,
+    cloud_proxy="",
+    user_agent="",
+    referer="",
 ):
+    return execute_player(
+        render_live_player(
+            url,
+            proxy_base_url=proxy,
+            use_proxy=use_proxy,
+            cloud_proxy_base_url=cloud_proxy,
+            user_agent=user_agent,
+            referer=referer,
+        ),
+        page=page,
+        referrer=referrer,
+    )
+
+
+def execute_player(html, *, page="https://m3uedit.streamlit.app/", referrer=None):
     node = shutil.which("node")
     if not node:
         pytest.skip("Node.js is required to execute the embedded player regression tests")
@@ -20,7 +43,7 @@ def run_player(
         [node, str(Path(__file__).with_name("player_runtime.cjs"))],
         input=json.dumps(
             {
-                "html": render_live_player(url, proxy_base_url=proxy, use_proxy=use_proxy),
+                "html": html,
                 "page": page,
                 "referrer": referrer,
             }
@@ -121,3 +144,62 @@ def test_srcdoc_without_referrer_still_explains_mixed_content():
     result = run_player("http://provider.example/live.ts", referrer="")
     assert result["sources"] == []
     assert "HTTPS" in result["message"]
+
+
+def test_http_ts_uses_cloud_gateway_without_converting_or_losing_provider_token():
+    from urllib.parse import parse_qs, urlsplit
+
+    url = "http://provider.example/live/user/pass/454.ts?play_token=test&extension=ts"
+    result = run_player(
+        url,
+        proxy="http://127.0.0.1:8502/proxy?token=local-session",
+        cloud_proxy="https://adentv-canli.netlify.app/proxy",
+        user_agent="VLC/3.0.18 LibVLC/3.0.18",
+        referer="https://provider.example/",
+    )
+    assert result["sources"][0]["engine"] == "MPEGTS"
+    target = urlsplit(result["sources"][0]["url"])
+    assert (target.scheme, target.netloc, target.path) == (
+        "https",
+        "adentv-canli.netlify.app",
+        "/proxy",
+    )
+    assert parse_qs(target.query) == {
+        "url": [url],
+        "format": ["ts"],
+        "ua": ["VLC/3.0.18 LibVLC/3.0.18"],
+        "referer": ["https://provider.example/"],
+    }
+
+
+def test_cloud_gateway_does_not_override_local_session_proxy():
+    from urllib.parse import urlsplit
+
+    result = run_player(
+        "http://provider.example/live.ts",
+        page="http://localhost:8501/",
+        proxy="http://127.0.0.1:8502/proxy?token=session",
+        cloud_proxy="https://adentv-canli.netlify.app/proxy",
+    )
+    assert urlsplit(result["sources"][0]["url"]).netloc == "127.0.0.1:8502"
+
+
+def test_proxy_switch_off_prevents_cloud_relay():
+    result = run_player(
+        "http://provider.example/live.ts",
+        use_proxy=False,
+        cloud_proxy="https://adentv-canli.netlify.app/proxy",
+    )
+    assert result["sources"] == []
+    assert "HTTPS" in result["message"]
+
+
+def test_cloud_gateway_loads_hls_through_its_https_manifest_url():
+    from urllib.parse import parse_qs, urlsplit
+
+    url = "http://provider.example/live.m3u8?play_token=test"
+    result = run_player(url, cloud_proxy="https://adentv-canli.netlify.app/proxy")
+    assert result["sources"][0]["engine"] == "HLS"
+    target = urlsplit(result["sources"][0]["url"])
+    assert target.netloc == "adentv-canli.netlify.app"
+    assert parse_qs(target.query) == {"url": [url]}
